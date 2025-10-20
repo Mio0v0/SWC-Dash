@@ -1,0 +1,123 @@
+Metadata-Version: 2.1
+Name: neurom
+Version: 4.0.4
+Summary: NeuroM: a light-weight neuron morphology analysis package
+Author: Blue Brain Project, EPFL
+License: Copyright (c) 2015-2022 Blue Brain Project/EPFL 
+        
+        Redistribution and use in source and binary forms, with or without
+        modification, are permitted provided that the following conditions are met:
+        
+            1. Redistributions of source code must retain the above copyright
+               notice, this list of conditions and the following disclaimer.
+            2. Redistributions in binary form must reproduce the above copyright
+               notice, this list of conditions and the following disclaimer in the
+               documentation and/or other materials provided with the distribution.
+            3. Neither the name of the copyright holder nor the names of
+               its contributors may be used to endorse or promote products
+               derived from this software without specific prior written permission.
+        
+        THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
+        DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+        ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        
+Project-URL: Homepage, https://github.com/BlueBrain/NeuroM
+Project-URL: Repository, https://github.com/BlueBrain/NeuroM.git
+Project-URL: Documentation, https://neurom.readthedocs.io/
+Project-URL: Tracker, https://github.com/BlueBrain/NeuroM/issues
+Classifier: Development Status :: 6 - Mature
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE.txt
+License-File: AUTHORS.md
+Requires-Dist: click >=7.0
+Requires-Dist: matplotlib >=3.2.1
+Requires-Dist: morphio >=3.3.6
+Requires-Dist: numpy >=1.8.0
+Requires-Dist: pandas >=1.0.5
+Requires-Dist: pyyaml >=3.10
+Requires-Dist: scipy >=1.2.0
+Requires-Dist: tqdm >=4.8.4
+Requires-Dist: cached-property >=1.5.1
+Requires-Dist: importlib-resources >=1.3 ; python_version < "3.9"
+Provides-Extra: docs
+Requires-Dist: sphinx-bluebrain-theme ; extra == 'docs'
+Requires-Dist: sphinx-autorun ; extra == 'docs'
+Provides-Extra: plotly
+Requires-Dist: plotly >=3.6.0 ; extra == 'plotly'
+Requires-Dist: psutil >=5.5.1 ; extra == 'plotly'
+
+![NeuroM Logo](https://raw.githubusercontent.com/BlueBrain/NeuroM/master/doc/source/logo/NeuroM.jpg)
+
+
+
+# NeuroM
+
+NeuroM is a Python toolkit for the analysis and processing of neuron morphologies.
+
+[![Run all tox python3](https://github.com/BlueBrain/NeuroM/actions/workflows/run-tox.yml/badge.svg)](https://github.com/BlueBrain/NeuroM/actions/workflows/run-tox.yml)
+[![license](https://img.shields.io/pypi/l/neurom.svg)](https://github.com/BlueBrain/NeuroM/blob/master/LICENSE.txt)
+[![codecov.io](https://codecov.io/github/BlueBrain/NeuroM/coverage.svg?branch=master)](https://codecov.io/github/BlueBrain/NeuroM?branch=master)
+[![Documentation Status](https://readthedocs.org/projects/neurom/badge/?version=latest)](http://neurom.readthedocs.io/en/latest/?badge=latest)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.597333.svg)](https://doi.org/10.5281/zenodo.597333)
+
+## Documentation
+
+NeuroM documentation is built and hosted on [readthedocs](https://readthedocs.org/).
+
+* [latest snapshot](http://neurom.readthedocs.org/en/latest/)
+* [latest release](http://neurom.readthedocs.org/en/stable/)
+
+## Migration to v2 or v3 versions
+
+Refer to [the doc page](https://neurom.readthedocs.io/en/latest/migration.html) on this topic.
+
+## Reporting issues
+
+Issues should be reported to the
+[NeuroM github repository issue tracker](https://github.com/BlueBrain/NeuroM/issues).
+The ability and speed with which issues can be resolved depends on how complete and
+succinct the report is. For this reason, it is recommended that reports be accompanied
+with
+* A minimal but self-contained code sample that reproduces the issue. Minimal means no
+  code that is irrelevant to the issue should be included. Self-contained means it should
+  be possible to run the code without modifications and reproduce the problem.
+* The observed and expected output and/or behaviour. If the issue is an error, the python
+  error stack trace is extremely useful.
+* The commit ID of the version used. This is particularly important if reporting an error
+  from an older version of NeuroM.
+* If reporting a regression, the commit ID of the change that introduced the problem
+* If the issue depends on data, a data sample which reproduces the problem should be
+  up-loaded. But check first whether the error can be reproduced with any of the data
+  samples available in the `tests/data` directory.
+
+## Citation
+
+When you use the NeuroM software, we ask you to cite the following (**this includes poster presentations**):
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.597333.svg)](https://doi.org/10.5281/zenodo.597333)
+
+
+## Funding & Acknowledgements
+This work has been partially funded by the European Union’s Horizon 2020 Framework Programme for Research and Innovation under the Specific Grant Agreement No. 720270, 785907 (Human Brain Project SGA1/SGA2) and by the EBRAINS research infrastructure, funded from the European Union’s Horizon 2020 Framework Programme for Research and Innovation under the Specific Grant Agreement No. 945539 (Human Brain Project SGA3).
+
+The development of this software was supported by funding to the Blue Brain Project, a research center of the École polytechnique fédérale de Lausanne (EPFL), from the Swiss government’s ETH Board of the Swiss Federal Institutes of Technology.
+
+For license and authors, see `LICENSE.txt` and `AUTHORS.md` respectively.
+
+Copyright (c) 2015-2022 Blue Brain Project/EPFL
