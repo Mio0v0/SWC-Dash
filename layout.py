@@ -116,7 +116,10 @@ def _validation_tab():
     return html.Div(
         [
             html.H2("SWC Format Validation", style={"marginBottom": 6}),
-            html.P("Drop an SWC file to run NeuroM checks. The file is sanitized (type=0 or >7 → 7) before checks."),
+            html.P(
+                "Drop an SWC file to run NeuroM checks. The file is sanitized (type=0 or >7 → 7) before checks."
+            ),
+
             dcc.Upload(
                 id="upload-validate", multiple=False,
                 children=html.Div(["Drag & drop or ", html.A("select an SWC file to validate")]),
@@ -126,29 +129,29 @@ def _validation_tab():
                     "textAlign": "center", "marginBottom": 10,
                 },
             ),
+
             html.Div(id="validate-file-info", style={"color": "#555", "marginBottom": 8}),
             dash_table.DataTable(
                 id="table-validate-results",
                 columns=[
-                    {"name": "check", "id": "check"},
+                    {"name": "check",  "id": "check"},
                     {"name": "status", "id": "status"},
                 ],
                 data=[],
                 page_size=15,
                 style_table={"overflowX": "auto"},
+                style_cell={"fontSize": 14},
             ),
+
             html.Div(
                 [
                     html.Button("Download validation JSON", id="btn-dl-validate-json"),
-                    html.Button("Download sanitized SWC", id="btn-dl-sanitized", style={"marginLeft": 10}),
                 ],
                 style={"marginTop": 10},
             ),
 
-            dcc.Store(id="store-validate-results"),
-            dcc.Store(id="store-validate-swc-bytes"),
+            dcc.Store(id="store-validate-table"),
             dcc.Download(id="download-validate-json"),
-            dcc.Download(id="download-sanitized-swc"),
         ]
     )
 
@@ -288,7 +291,7 @@ def build_layout():
                 value="tab-dendro",
                 children=[
                     dcc.Tab(label="Dendrogram Editor", value="tab-dendro"),
-                    # dcc.Tab(label="Format Validation", value="tab-validate"),
+                    dcc.Tab(label="Format Validation", value="tab-validate"),
                     dcc.Tab(label="2D/3D Viewer", value="tab-viewer"),
                 ],
             ),

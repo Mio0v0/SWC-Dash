@@ -4,12 +4,14 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import dash
+import json
 from dash import Input, Output, State, dcc
 
 from swc_io import parse_swc_text_preserve_tokens, write_swc_to_bytes_preserve_tokens
 from graph_build import make_dendrogram_figure
 from graph_utils import subtree_nodes, children_lists
 from constants import color_for_type, label_for_type, SWC_COLS, DEFAULT_COLORS
+from validation_core import run_format_validation_from_text
 
 from layout import _dendrogram_tab, _validation_tab, _viewer_tab
 
@@ -33,6 +35,67 @@ def _decode_uploaded_text(contents: str) -> str:
     raw = base64.b64decode(b64, validate=False)
     return raw.decode("utf-8", errors="ignore")
 
+from datetime import datetime
+
+# ---- Optional: your long free-text header goes here (commented in the output) ----
+# If you want the *entire* document you pasted to appear before the XML header,
+# put it in this string. If you only want the first line/title, just leave that.
+SYNOPSIS_SWC_PLUS = """*** working document ***
+SWC plus (SWC+) format specification
+"""
+
+def _strip_swc_header(body_text: str) -> str:
+    """Remove any existing SWC '#' comment header from SWC text."""
+    lines = body_text.splitlines()
+    i = 0
+    while i < len(lines) and (not lines[i].strip() or lines[i].lstrip().startswith('#')):
+        i += 1
+    return "\n".join(lines[i:]) + ("\n" if lines and not lines[-1].endswith("\n") else "")
+
+def _build_swc_plus_header_xml(filename: str | None) -> str:
+    """
+    Minimal SWC+ XML header (commented lines).
+    Lines start with '# ' as required by SWC/SWC+.
+    """
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    fname = filename or "edited.swc"
+
+    xml = f"""# <SWCplus version="0.12">
+#   <MetaData>
+#     <FileHistory originalName="{fname}" originalFormat="SWC">
+#       <Modification date="{today}" software="SWC Tools – Dendrogram Editor" command="type-edit" summary="Edited types via dendrogram"/>
+#     </FileHistory>
+#   </MetaData>
+#   <CustomTypes version="0.12">
+#     <!-- Place customized Types here if you use TypeIDs ≥16 -->
+#   </CustomTypes>
+# </SWCplus>
+"""
+    return xml
+
+def make_swc_plus_bytes_from_df(df: pd.DataFrame, filename: str | None) -> bytes:
+    """
+    Compose a valid SWC+ file:
+      [optional free-text synopsis as commented lines]
+      [commented XML <SWCplus> header]
+      [plain SWC matrix (no original # header)]
+    """
+    # 1) base body produced by your existing SWC writer
+    body_bytes = write_swc_to_bytes_preserve_tokens(df)
+    body_text = body_bytes.decode("utf-8", errors="replace")
+    body_text = _strip_swc_header(body_text)
+
+    # 2) optional free-text synopsis (commented)
+    synopsis_block = ""
+    if SYNOPSIS_SWC_PLUS.strip():
+        synopsis_block = "".join(f"# {ln}\n" for ln in SYNOPSIS_SWC_PLUS.strip().splitlines())
+
+    # 3) SWC+ XML header (commented)
+    xml_block = _build_swc_plus_header_xml(filename)
+
+    # 4) glue together
+    out_text = synopsis_block + xml_block + body_text
+    return out_text.encode("utf-8")
 
 def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     """
@@ -249,10 +312,14 @@ def register_callbacks(app):
     def download_swc(n, df_records, filename):
         if not df_records:
             return dash.no_update
+
         df = pd.DataFrame(df_records)
-        content = write_swc_to_bytes_preserve_tokens(df)
+
+        # Build SWC+ bytes (commented SWC+ header + SWC body without original header)
+        content = make_swc_plus_bytes_from_df(df, filename)
+
         base = os.path.splitext(filename or "edited")[0]
-        out_name = f"{base}_edit.swc"
+        out_name = f"{base}_edit.swc"  # SWC+ keeps .swc extension
 
         def writer(f):
             f.write(content)
@@ -276,7 +343,7 @@ def register_callbacks(app):
         return dcc.send_string(csv_text, out_name)
 
     # =====================================================================
-    #                          2D / 3D VIEWER (unchanged)
+    #                          2D / 3D VIEWER
     # =====================================================================
 
     @app.callback(
@@ -318,7 +385,6 @@ def register_callbacks(app):
     def viewer_draw(df_records, view, type_selected,
                     rng_u, rng_s, rng_a, rng_b, rng_ap, rng_c,
                     perf_flags, bins_per_type):
-        # unchanged
         if not df_records:
             return go.Figure(), go.Figure()
 
@@ -333,6 +399,7 @@ def register_callbacks(app):
         df["label"] = [label_for_type(int(t)) for t in df["type"].tolist()]
         df["radius"] = pd.to_numeric(df["radius"], errors="coerce").fillna(0.0)
 
+        # percentile per type (child node rank percent)
         perc = np.zeros(len(df), dtype=float)
         for lbl, sub in df.groupby("label"):
             idx = sub.index
@@ -357,13 +424,18 @@ def register_callbacks(app):
         }
         selected_labels = set(type_selected or [])
 
+        # line width helpers
         THIN_2D, THIN_3D = 0.8, 1.6
         MIN_2D, MIN_3D = 0.2, 0.4
         SCALE_2D, SCALE_3D = 1.0, 1.0
 
-        def w2d(r): return max(MIN_2D, float(r) * SCALE_2D)
-        def w3d(r): return max(MIN_3D, float(r) * SCALE_3D)
+        def w2d(r):
+            return max(MIN_2D, float(r) * SCALE_2D)
 
+        def w3d(r):
+            return max(MIN_3D, float(r) * SCALE_3D)
+
+        # view axes
         if view == "xz":
             a1, a2, xlab, ylab = "x", "z", "X", "Z"
         elif view == "yz":
@@ -371,8 +443,10 @@ def register_callbacks(app):
         else:
             a1, a2, xlab, ylab = "x", "y", "X", "Y"
 
+        # ---------------- 2D with hover showing radius (4 decimals) ----------------
         traces2d = []
         legend_done2d = set()
+
         for lbl, color in DEFAULT_COLORS.items():
             pmin, pmax = map(float, label_windows[lbl])
 
@@ -384,15 +458,16 @@ def register_callbacks(app):
                 for v in kids[u]:
                     if df.iloc[v]["label"] != lbl:
                         continue
+
                     p = float(df.iloc[v]["perc"])
                     r = float(df.iloc[v]["radius"])
-
                     x0, y0 = float(df.iloc[u][a1]), float(df.iloc[u][a2])
                     x1, y1 = float(df.iloc[v][a1]), float(df.iloc[v][a2])
 
                     in_window = (lbl in selected_labels) and (pmin <= p <= pmax)
 
                     if quantize and in_window:
+                        # aggregate into bins; hover will show AVG radius per bin
                         span = max(1e-9, (pmax - pmin))
                         rel = (p - pmin) / span
                         bi = int(np.clip(np.floor(rel * bins_per_type), 0, bins_per_type - 1))
@@ -401,22 +476,28 @@ def register_callbacks(app):
                         b["y"] += [y0, y1, np.nan]
                         b["rsum"] += r
                         b["n"] += 1
+
                     elif (not quantize) and in_window:
+                        # segment inside window: enable hover with this child radius
+                        customdata = [r, r]  # one per vertex
                         traces2d.append(
                             go.Scattergl(
                                 x=[x0, x1], y=[y0, y1], mode="lines",
                                 line=dict(width=w2d(r), color=color),
-                                hoverinfo="skip",
+                                hovertemplate="radius = %{customdata:.4f}<extra></extra>",
+                                customdata=customdata,
                                 showlegend=(lbl not in legend_done2d),
                                 name=lbl, legendgroup=lbl,
                             )
                         )
                         legend_done2d.add(lbl)
+
                     else:
                         if not hide_thin:
                             thin_x += [x0, x1, np.nan]
                             thin_y += [y0, y1, np.nan]
 
+            # background thin edges: hover off
             if not hide_thin and thin_x:
                 traces2d.append(
                     go.Scattergl(
@@ -429,15 +510,18 @@ def register_callbacks(app):
                 )
                 legend_done2d.add(lbl)
 
+            # quantized bins: hover shows average radius
             if quantize:
                 for bi in sorted(bins2d.keys()):
                     b = bins2d[bi]
                     avg_r = (b["rsum"] / max(1, b["n"]))
+                    cd = [avg_r] * len(b["x"])
                     traces2d.append(
                         go.Scattergl(
                             x=b["x"], y=b["y"], mode="lines",
                             line=dict(width=w2d(avg_r), color=color),
-                            hoverinfo="skip",
+                            hovertemplate="avg radius = %{customdata:.4f}<extra></extra>",
+                            customdata=cd,
                             showlegend=(lbl not in legend_done2d),
                             name=lbl, legendgroup=lbl,
                         )
@@ -450,9 +534,12 @@ def register_callbacks(app):
             template="plotly_white",
             height=600, margin=dict(l=10, r=10, t=30, b=10),
             legend_title_text="Type",
+            hovermode="closest",  # pointer-style hover near a line segment
+            hoverdistance=15,  # pixels; tweak for stickier/looser hover
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
 
+        # ---------------- 3D (unchanged; hover disabled to keep it light) ----------------
         traces3d = []
         legend_done3d = set()
         for lbl, color in DEFAULT_COLORS.items():
@@ -489,7 +576,7 @@ def register_callbacks(app):
                             go.Scatter3d(
                                 x=[x0, x1], y=[y0, y1], z=[z0, z1], mode="lines",
                                 line=dict(width=w3d(r), color=color),
-                                hoverinfo="skip",
+                                hoverinfo="skip",  # keep 3D quiet per original behavior
                                 showlegend=(lbl not in legend_done3d),
                                 name=lbl, legendgroup=lbl,
                             )
@@ -538,3 +625,41 @@ def register_callbacks(app):
 
         return fig2d, fig3d
 
+    # =====================================================================
+    #                          VALIDATION PAGE
+    # =====================================================================
+    @app.callback(
+        Output("validate-file-info", "children"),
+        Output("table-validate-results", "data", allow_duplicate=True),
+        Output("store-validate-table", "data", allow_duplicate=True),
+        Input("upload-validate", "contents"),
+        State("upload-validate", "filename"),
+        prevent_initial_call=True,
+    )
+    def run_validation(contents, filename):
+        if not contents:
+            return "No file.", [], None
+        try:
+            header, b64 = contents.split(",", 1)
+            text = base64.b64decode(b64).decode("utf-8", errors="ignore")
+
+            _, _sanitized_bytes, table_rows = run_format_validation_from_text(text)
+            msg = f"Validated {filename} • {len(table_rows)} checks"
+
+            return (msg, table_rows, table_rows)
+        except Exception as e:
+            return f"Validation failed: {e}", [], None
+
+    @app.callback(
+        Output("download-validate-json", "data"),
+        Input("btn-dl-validate-json", "n_clicks"),
+        State("store-validate-table", "data"),
+        State("upload-validate", "filename"),
+        prevent_initial_call=True,
+    )
+    def download_validate_json(n, table_rows, filename):
+        if not table_rows:
+            return dash.no_update
+        base = os.path.splitext(filename or "validation")[0]
+        out_name = f"{base}_validation.json"
+        return dcc.send_string(json.dumps(table_rows, indent=2), out_name)

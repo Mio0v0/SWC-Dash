@@ -2,3 +2,6 @@ dash
 pandas
 numpy
 plotly
+morphio
+neurom
+orjson
