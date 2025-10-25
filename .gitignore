@@ -1,4 +1,26 @@
+# Virtual environments
+.venv/
 venv/
-.env/
-*.pyc
+
+# PyInstaller build folders
+build/
+dist/
+
+# PyInstaller spec file
+*.spec
+
+# Byte-compiled / cached files
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# macOS system files
+.DS_Store
+
+# IDE/project files (optional but recommended)
+.idea/
+.vscode/
+
+# Logs and temporary
+*.log
