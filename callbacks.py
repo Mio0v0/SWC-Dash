@@ -99,22 +99,24 @@ def make_swc_plus_bytes_from_df(df: pd.DataFrame, filename: str | None) -> bytes
 
 def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     """
-    Build a simple 3D figure with edges only (no nodes),
-    color-coded by child's type/label.
+    Build a 3D figure with:
+      • edges color-coded by child's type/label (as before)
+      • soma nodes (type==1) explicitly rendered as spheres (markers)
     """
     if df is None or df.empty:
-        return go.Figure(layout=dict(template="plotly_white", height=900))  # <-- bigger
+        return go.Figure(layout=dict(template="plotly_white", height=900))
 
     arr = df[SWC_COLS].to_records(index=False)
     kids = children_lists(arr)
 
     traces = []
+
+    # ---- Edges (unchanged logic): color by CHILD's label ----
     for lbl, color in DEFAULT_COLORS.items():
         xs, ys, zs = [], [], []
         for u in range(len(arr)):
             for v in kids[u]:
-                # color by child's label
-                tval = int(arr[v][1])
+                tval = int(arr[v][1])  # child's type
                 if label_for_type(tval) != lbl:
                     continue
                 x0, y0, z0 = float(arr[u][2]), float(arr[u][3]), float(arr[u][4])
@@ -131,15 +133,49 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
                 )
             )
 
+    # ---- Soma spheres (type==1): show even if there are no edges) ----
+    soma_x, soma_y, soma_z, soma_sizes = [], [], [], []
+    soma_color = DEFAULT_COLORS.get("soma", "#d62728")  # fallback color if needed
+
+    for i in range(len(arr)):
+        try:
+            if int(arr[i][1]) == 1:  # soma type
+                soma_x.append(float(arr[i][2]))
+                soma_y.append(float(arr[i][3]))
+                soma_z.append(float(arr[i][4]))
+                # If radius present (SWC column 6 / index 5), scale a bit for visibility
+                try:
+                    r = float(arr[i][5])
+                    soma_sizes.append(max(5.0, 6.0 * r))  # tweakable scale
+                except Exception:
+                    soma_sizes.append(8.0)  # default size if radius missing
+        except Exception:
+            pass
+
+    if soma_x:
+        traces.append(
+            go.Scatter3d(
+                x=soma_x, y=soma_y, z=soma_z,
+                mode="markers",
+                marker=dict(size=soma_sizes, color=soma_color, opacity=0.95),
+                name="soma",
+                legendgroup="soma",
+                hoverinfo="text",
+                text=[f"soma id={int(arr[i][0])}" for i in range(len(arr)) if int(arr[i][1]) == 1],
+                showlegend=True,
+            )
+        )
+
     fig = go.Figure(data=traces)
     fig.update_layout(
         template="plotly_white",
         scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z", aspectmode="data"),
-        height=900,  # <-- bigger
+        height=900,
         margin=dict(l=10, r=10, t=10, b=10),
         legend_title_text="Type",
     )
     return fig
+
 
 
 def register_callbacks(app):
