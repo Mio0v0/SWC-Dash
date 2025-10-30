@@ -381,7 +381,7 @@ def register_callbacks(app):
     # =====================================================================
     #                          2D / 3D VIEWER
     # =====================================================================
-
+    # ---------------- Viewer: load file ----------------
     @app.callback(
         Output("viewer-file-info", "children"),
         Output("store-viewer-df", "data", allow_duplicate=True),
@@ -402,76 +402,133 @@ def register_callbacks(app):
         except Exception as e:
             return f"Failed to load: {e}", None
 
+    # ---------------- Helper ----------------
+    def _clamp_round(v):
+        try:
+            v = float(v)
+        except Exception:
+            return None
+        v = max(0.01, min(10.0, v))
+        return float(round(v, 2))
+
+    # ---------------- A) Controls -> Store (single callback, no cycles) ----------------
+    @app.callback(
+        Output("viewer-topk-store", "data"),
+        # sliders
+        Input("viewer-topk-undefined", "value"),
+        Input("viewer-topk-soma", "value"),
+        Input("viewer-topk-axon", "value"),
+        Input("viewer-topk-basal", "value"),
+        Input("viewer-topk-apical", "value"),
+        Input("viewer-topk-custom", "value"),
+        # numeric inputs
+        Input("viewer-topk-undefined-input", "value"),
+        Input("viewer-topk-soma-input", "value"),
+        Input("viewer-topk-axon-input", "value"),
+        Input("viewer-topk-basal-input", "value"),
+        Input("viewer-topk-apical-input", "value"),
+        Input("viewer-topk-custom-input", "value"),
+        # current store
+        State("viewer-topk-store", "data"),
+        prevent_initial_call=True,
+    )
+    def any_control_updates_store(
+            s_undef, s_soma, s_axon, s_basal, s_apical, s_custom,
+            n_undef, n_soma, n_axon, n_basal, n_apical, n_custom,
+            store,
+    ):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update
+
+        src = ctx.triggered[0]["prop_id"].split(".")[0]
+        data = dict(store or {})
+
+        mapping = {
+            "viewer-topk-undefined": ("undefined", s_undef),
+            "viewer-topk-soma": ("soma", s_soma),
+            "viewer-topk-axon": ("axon", s_axon),
+            "viewer-topk-basal": ("basal dendrite", s_basal),
+            "viewer-topk-apical": ("apical dendrite", s_apical),
+            "viewer-topk-custom": ("custom", s_custom),
+
+            "viewer-topk-undefined-input": ("undefined", n_undef),
+            "viewer-topk-soma-input": ("soma", n_soma),
+            "viewer-topk-axon-input": ("axon", n_axon),
+            "viewer-topk-basal-input": ("basal dendrite", n_basal),
+            "viewer-topk-apical-input": ("apical dendrite", n_apical),
+            "viewer-topk-custom-input": ("custom", n_custom),
+        }
+
+        if src in mapping:
+            lbl, raw = mapping[src]
+            val = _clamp_round(raw)
+            if val is not None:
+                data[lbl] = val
+                return data
+
+        return dash.no_update
+
+    # ---------------- B) Draw figures (read store) ----------------
     @app.callback(
         Output("fig-view-2d", "figure"),
         Output("fig-view-3d", "figure"),
         Input("store-viewer-df", "data"),
         Input("viewer-2d-view", "value"),
         Input("viewer-type-select", "value"),
-        Input("viewer-range-undefined", "value"),
-        Input("viewer-range-soma", "value"),
-        Input("viewer-range-axon", "value"),
-        Input("viewer-range-basal", "value"),
-        Input("viewer-range-apical", "value"),
-        Input("viewer-range-custom", "value"),
         Input("viewer-performance", "value"),
-        Input("viewer-width-bins", "value"),
+        Input("viewer-topk-store", "data"),
         prevent_initial_call=True,
     )
-    def viewer_draw(df_records, view, type_selected,
-                    rng_u, rng_s, rng_a, rng_b, rng_ap, rng_c,
-                    perf_flags, bins_per_type):
+    def viewer_draw(df_records, view, type_selected, perf_flags, topk_store):
         if not df_records:
             return go.Figure(), go.Figure()
 
-        quantize = "quantize" in (perf_flags or [])
         hide_thin = "hide_thin" in (perf_flags or [])
+        THIN_2D, THIN_3D = 0.8, 1.6
+        DOT_COLOR, DOT_EDGE_COLOR = "rgba(170,0,255,0.95)", "white"
+        DOT_SCALE, DOT_MIN, DOT_MAX = 4.0, 3.0, 24.0
 
-        df = pd.DataFrame(df_records)
-        arr = df[SWC_COLS].to_records(index=False)
-        kids = children_lists(arr)
+        def fmt_k(k: float) -> str:
+            if abs(k - round(k)) < 1e-6:
+                return f"{int(round(k))}%"
+            s = f"{k:.2f}".rstrip("0").rstrip(".")
+            return f"{s}%"
 
-        df = df.copy()
+        df = pd.DataFrame(df_records).copy()
+        for col in ("x", "y", "z", "radius", "type"):
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         df["label"] = [label_for_type(int(t)) for t in df["type"].tolist()]
-        df["radius"] = pd.to_numeric(df["radius"], errors="coerce").fillna(0.0)
 
-        # percentile per type (child node rank percent)
-        perc = np.zeros(len(df), dtype=float)
+        # percentiles by type
+        perc = np.zeros(len(df), dtype=np.float32)
         for lbl, sub in df.groupby("label"):
-            idx = sub.index
-            r = sub["radius"].to_numpy()
-            if len(r) > 1:
-                order = np.argsort(r)
-                ranks = np.empty_like(order, dtype=float)
-                ranks[order] = np.arange(1, len(r) + 1)
-                p = 100.0 * (ranks - 1) / max(1, len(r) - 1)
+            idx = sub.index.to_numpy()
+            rvals = sub["radius"].to_numpy(np.float32)
+            if rvals.size > 1:
+                order = np.argsort(rvals)
+                ranks = np.empty_like(order, dtype=np.float32)
+                ranks[order] = np.arange(1, rvals.size + 1, dtype=np.float32)
+                p = 100.0 * (ranks - 1.0) / float(max(1, rvals.size - 1))
             else:
-                p = np.array([100.0 if r[0] > 0 else 0.0])
+                p = np.array([100.0 if (rvals.size == 1 and rvals[0] > 0.0) else 0.0], dtype=np.float32)
             perc[idx] = p
         df["perc"] = perc
 
-        label_windows = {
-            "undefined": (rng_u or [70, 100]),
-            "soma": (rng_s or [70, 100]),
-            "axon": (rng_a or [70, 100]),
-            "basal dendrite": (rng_b or [70, 100]),
-            "apical dendrite": (rng_ap or [70, 100]),
-            "custom": (rng_c or [70, 100]),
+        def clamp_k(v):
+            return max(0.01, min(10.0, float(v))) if v is not None else 10.0
+
+        d = topk_store or {}
+        topk_by_label = {
+            "undefined": clamp_k(d.get("undefined", 10.0)),
+            "soma": clamp_k(d.get("soma", 10.0)),
+            "axon": clamp_k(d.get("axon", 10.0)),
+            "basal dendrite": clamp_k(d.get("basal dendrite", 10.0)),
+            "apical dendrite": clamp_k(d.get("apical dendrite", 10.0)),
+            "custom": clamp_k(d.get("custom", 10.0)),
         }
-        selected_labels = set(type_selected or [])
 
-        # line width helpers
-        THIN_2D, THIN_3D = 0.8, 1.6
-        MIN_2D, MIN_3D = 0.2, 0.4
-        SCALE_2D, SCALE_3D = 1.0, 1.0
-
-        def w2d(r):
-            return max(MIN_2D, float(r) * SCALE_2D)
-
-        def w3d(r):
-            return max(MIN_3D, float(r) * SCALE_3D)
-
-        # view axes
+        # choose axes
         if view == "xz":
             a1, a2, xlab, ylab = "x", "z", "X", "Z"
         elif view == "yz":
@@ -479,184 +536,152 @@ def register_callbacks(app):
         else:
             a1, a2, xlab, ylab = "x", "y", "X", "Y"
 
-        # ---------------- 2D with hover showing radius (4 decimals) ----------------
-        traces2d = []
-        legend_done2d = set()
+        X = df[a1].to_numpy(np.float32)
+        Y = df[a2].to_numpy(np.float32)
+        Z = df["z"].to_numpy(np.float32)
+        R = df["radius"].to_numpy(np.float32)
+        L = np.array(df["label"].tolist())
+        P = df["perc"].to_numpy(np.float32)
+        has_id = "id" in df.columns
+        ID = df["id"].to_numpy(np.int64) if has_id else None
 
+        arr = df[SWC_COLS].to_records(index=False)
+        kids = children_lists(arr)
+        e_u, e_v = [], []
+        for u in range(len(arr)):
+            ch = kids[u]
+            if ch:
+                e_u.extend([u] * len(ch))
+                e_v.extend(ch)
+        if not e_u:
+            return go.Figure(), go.Figure()
+        e_u = np.asarray(e_u, dtype=np.int32)
+        e_v = np.asarray(e_v, dtype=np.int32)
+
+        def segments_2d(x0, y0, x1, y1):
+            m = x0.shape[0]
+            Xs = np.empty(m * 3, dtype=np.float32)
+            Ys = np.empty(m * 3, dtype=np.float32)
+            Xs[0::3] = x0;
+            Xs[1::3] = x1;
+            Xs[2::3] = np.nan
+            Ys[0::3] = y0;
+            Ys[1::3] = y1;
+            Ys[2::3] = np.nan
+            return Xs, Ys
+
+        # 2D base
+        traces2d, legend2d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
-            pmin, pmax = map(float, label_windows[lbl])
+            mask_lbl = (L[e_v] == lbl)
+            if not np.any(mask_lbl):
+                traces2d.append(go.Scattergl(
+                    x=[None], y=[None], mode="lines",
+                    line=dict(width=THIN_2D, color=color),
+                    hoverinfo="skip", name=lbl, legendgroup=lbl,
+                    showlegend=True, visible="legendonly",
+                ))
+                continue
+            uu = e_u[mask_lbl];
+            vv = e_v[mask_lbl]
+            x0, y0 = X[uu], Y[uu]
+            x1, y1 = X[vv], Y[vv]
+            Xs, Ys = segments_2d(x0, y0, x1, y1)
+            cd = np.repeat(R[vv], 2).astype(np.float32)
 
-            if not hide_thin:
-                thin_x, thin_y = [], []
-            bins2d = {}
+            if "hide_thin" not in (perf_flags or []):
+                traces2d.append(go.Scattergl(
+                    x=Xs, y=Ys, mode="lines",
+                    line=dict(width=THIN_2D, color=color),
+                    hovertemplate="radius = %{customdata:.4f}<extra></extra>",
+                    customdata=cd,
+                    name=lbl, legendgroup=lbl, showlegend=(lbl not in legend2d),
+                ))
+                legend2d.add(lbl)
+            else:
+                traces2d.append(go.Scattergl(
+                    x=[None], y=[None], mode="lines",
+                    line=dict(width=THIN_2D, color=color),
+                    hoverinfo="skip", name=lbl, legendgroup=lbl,
+                    showlegend=True, visible="legendonly",
+                ))
 
-            for u in range(len(arr)):
-                for v in kids[u]:
-                    if df.iloc[v]["label"] != lbl:
-                        continue
+        # 2D Top-K% dots
+        selected_labels = set(type_selected or [])
+        for lbl, _ in DEFAULT_COLORS.items():
+            if lbl not in selected_labels:
+                continue
+            K = float(topk_by_label.get(lbl, 10.0))
+            thresh = 100.0 - K
+            cand = np.where((L[e_v] == lbl) & (P[e_v] >= thresh))[0]
+            if cand.size == 0:
+                continue
+            vv = e_v[cand]
+            dot_x, dot_y = X[vv], Y[vv]
+            sz = np.clip((DOT_SCALE * R[vv]).astype(np.float32), DOT_MIN, DOT_MAX)
+            label_text = f"Top-{fmt_k(K)}"
+            if has_id:
+                hover = [f"{label_text} • id={int(ID[v])} • radius={float(R[v]):.4f} • {lbl}" for v in vv]
+            else:
+                hover = [f"{label_text} • radius={float(R[v]):.4f} • {lbl}" for v in vv]
 
-                    p = float(df.iloc[v]["perc"])
-                    r = float(df.iloc[v]["radius"])
-                    x0, y0 = float(df.iloc[u][a1]), float(df.iloc[u][a2])
-                    x1, y1 = float(df.iloc[v][a1]), float(df.iloc[v][a2])
+            traces2d.append(go.Scatter(
+                x=dot_x, y=dot_y, mode="markers",
+                marker=dict(size=sz, color=DOT_COLOR, line=dict(color=DOT_EDGE_COLOR, width=0.8), opacity=0.95),
+                hovertemplate="%{text}<extra></extra>", text=hover,
+                name=f"{lbl} ({label_text})", legendgroup=f"{lbl}-topk", showlegend=False,
+            ))
 
-                    in_window = (lbl in selected_labels) and (pmin <= p <= pmax)
-
-                    if quantize and in_window:
-                        # aggregate into bins; hover will show AVG radius per bin
-                        span = max(1e-9, (pmax - pmin))
-                        rel = (p - pmin) / span
-                        bi = int(np.clip(np.floor(rel * bins_per_type), 0, bins_per_type - 1))
-                        b = bins2d.setdefault(bi, {"x": [], "y": [], "rsum": 0.0, "n": 0})
-                        b["x"] += [x0, x1, np.nan]
-                        b["y"] += [y0, y1, np.nan]
-                        b["rsum"] += r
-                        b["n"] += 1
-
-                    elif (not quantize) and in_window:
-                        # segment inside window: enable hover with this child radius
-                        customdata = [r, r]  # one per vertex
-                        traces2d.append(
-                            go.Scattergl(
-                                x=[x0, x1], y=[y0, y1], mode="lines",
-                                line=dict(width=w2d(r), color=color),
-                                hovertemplate="radius = %{customdata:.4f}<extra></extra>",
-                                customdata=customdata,
-                                showlegend=(lbl not in legend_done2d),
-                                name=lbl, legendgroup=lbl,
-                            )
-                        )
-                        legend_done2d.add(lbl)
-
-                    else:
-                        if not hide_thin:
-                            thin_x += [x0, x1, np.nan]
-                            thin_y += [y0, y1, np.nan]
-
-            # background thin edges: hover off
-            if not hide_thin and thin_x:
-                traces2d.append(
-                    go.Scattergl(
-                        x=thin_x, y=thin_y, mode="lines",
-                        line=dict(width=THIN_2D, color=color),
-                        hoverinfo="skip",
-                        showlegend=(lbl not in legend_done2d),
-                        name=lbl, legendgroup=lbl,
-                    )
-                )
-                legend_done2d.add(lbl)
-
-            # quantized bins: hover shows average radius
-            if quantize:
-                for bi in sorted(bins2d.keys()):
-                    b = bins2d[bi]
-                    avg_r = (b["rsum"] / max(1, b["n"]))
-                    cd = [avg_r] * len(b["x"])
-                    traces2d.append(
-                        go.Scattergl(
-                            x=b["x"], y=b["y"], mode="lines",
-                            line=dict(width=w2d(avg_r), color=color),
-                            hovertemplate="avg radius = %{customdata:.4f}<extra></extra>",
-                            customdata=cd,
-                            showlegend=(lbl not in legend_done2d),
-                            name=lbl, legendgroup=lbl,
-                        )
-                    )
-                    legend_done2d.add(lbl)
-
-        fig2d = go.Figure(data=traces2d)
+        fig2d = go.Figure(traces2d)
         fig2d.update_layout(
-            xaxis_title=xlab, yaxis_title=ylab,
-            template="plotly_white",
-            height=600, margin=dict(l=10, r=10, t=30, b=10),
-            legend_title_text="Type",
-            hovermode="closest",  # pointer-style hover near a line segment
-            hoverdistance=15,  # pixels; tweak for stickier/looser hover
+            xaxis_title=xlab, yaxis_title=ylab, template="plotly_white",
+            height=600, margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Type",
+            hovermode="closest", hoverdistance=15,
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
 
-        # ---------------- 3D (unchanged; hover disabled to keep it light) ----------------
-        traces3d = []
-        legend_done3d = set()
+        # 3D base
+        traces3d, legend3d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
-            pmin, pmax = map(float, label_windows[lbl])
+            lv = (L[e_v] == lbl)
+            if not np.any(lv):
+                traces3d.append(go.Scatter3d(
+                    x=[None], y=[None], z=[None], mode="lines",
+                    line=dict(width=THIN_3D, color=color),
+                    hoverinfo="skip", name=lbl, legendgroup=lbl,
+                    showlegend=True, visible="legendonly",
+                ))
+                continue
+            uu = e_u[lv];
+            vv = e_v[lv]
+            x0, y0, z0 = X[uu], Y[uu], Z[uu]
+            x1, y1, z1 = X[vv], Y[vv], Z[vv]
+            m = uu.size
+            X3 = np.empty(m * 3, dtype=np.float32);
+            Y3 = np.empty(m * 3, dtype=np.float32);
+            Z3 = np.empty(m * 3, dtype=np.float32)
+            X3[0::3] = x0;
+            X3[1::3] = x1;
+            X3[2::3] = np.nan
+            Y3[0::3] = y0;
+            Y3[1::3] = y1;
+            Y3[2::3] = np.nan
+            Z3[0::3] = z0;
+            Z3[1::3] = z1;
+            Z3[2::3] = np.nan
 
-            if not hide_thin:
-                thin_x, thin_y, thin_z = [], [], []
-            bins3d = {}
+            traces3d.append(go.Scatter3d(
+                x=X3, y=Y3, z=Z3, mode="lines",
+                line=dict(width=THIN_3D, color=color),
+                hoverinfo="skip", name=lbl, legendgroup=lbl, showlegend=(lbl not in legend3d),
+            ))
+            legend3d.add(lbl)
 
-            for u in range(len(arr)):
-                for v in kids[u]:
-                    if df.iloc[v]["label"] != lbl:
-                        continue
-                    p = float(df.iloc[v]["perc"])
-                    r = float(df.iloc[v]["radius"])
-
-                    x0, y0, z0 = float(df.iloc[u]["x"]), float(df.iloc[u]["y"]), float(df.iloc[u]["z"])
-                    x1, y1, z1 = float(df.iloc[v]["x"]), float(df.iloc[v]["y"]), float(df.iloc[v]["z"])
-
-                    in_window = (lbl in selected_labels) and (pmin <= p <= pmax)
-
-                    if quantize and in_window:
-                        span = max(1e-9, (pmax - pmin))
-                        rel = (p - pmin) / span
-                        bi = int(np.clip(np.floor(rel * bins_per_type), 0, bins_per_type - 1))
-                        b = bins3d.setdefault(bi, {"x": [], "y": [], "z": [], "rsum": 0.0, "n": 0})
-                        b["x"] += [x0, x1, None]
-                        b["y"] += [y0, y1, None]
-                        b["z"] += [z0, z1, None]
-                        b["rsum"] += r
-                        b["n"] += 1
-                    elif (not quantize) and in_window:
-                        traces3d.append(
-                            go.Scatter3d(
-                                x=[x0, x1], y=[y0, y1], z=[z0, z1], mode="lines",
-                                line=dict(width=w3d(r), color=color),
-                                hoverinfo="skip",  # keep 3D quiet per original behavior
-                                showlegend=(lbl not in legend_done3d),
-                                name=lbl, legendgroup=lbl,
-                            )
-                        )
-                        legend_done3d.add(lbl)
-                    else:
-                        if not hide_thin:
-                            thin_x += [x0, x1, None]
-                            thin_y += [y0, y1, None]
-                            thin_z += [z0, z1, None]
-
-            if not hide_thin and thin_x:
-                traces3d.append(
-                    go.Scatter3d(
-                        x=thin_x, y=thin_y, z=thin_z, mode="lines",
-                        line=dict(width=THIN_3D, color=color),
-                        hoverinfo="skip",
-                        showlegend=(lbl not in legend_done3d),
-                        name=lbl, legendgroup=lbl,
-                    )
-                )
-                legend_done3d.add(lbl)
-
-            if quantize:
-                for bi in sorted(bins3d.keys()):
-                    b = bins3d[bi]
-                    avg_r = (b["rsum"] / max(1, b["n"]))
-                    traces3d.append(
-                        go.Scatter3d(
-                            x=b["x"], y=b["y"], z=b["z"], mode="lines",
-                            line=dict(width=w3d(avg_r), color=color),
-                            hoverinfo="skip",
-                            showlegend=(lbl not in legend_done3d),
-                            name=lbl, legendgroup=lbl,
-                        )
-                    )
-                    legend_done3d.add(lbl)
-
-        fig3d = go.Figure(data=traces3d)
+        fig3d = go.Figure(traces3d)
         fig3d.update_layout(
             template="plotly_white",
             scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z", aspectmode="data"),
-            height=600, margin=dict(l=10, r=10, t=30, b=10),
-            legend_title_text="Type",
+            height=600, margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Type",
         )
 
         return fig2d, fig3d

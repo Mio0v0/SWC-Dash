@@ -157,20 +157,32 @@ def _validation_tab():
 
 
 def _viewer_tab():
-    def percentile_slider(component_id: str):
-        return dcc.RangeSlider(
-            id=component_id,
-            min=0, max=100, step=1, value=[70, 100],
-            marks=None,
-            tooltip={"placement": "bottom", "always_visible": False},
+    def topk_row(label_txt: str, slider_id: str, input_id: str, default_val: float = 10.0):
+        return html.Div(
+            [
+                html.Label(label_txt, style={"display": "block", "marginBottom": 6}),
+                dcc.Slider(
+                    id=slider_id,
+                    min=0.01, max=10.0, step=0.01, value=float(default_val),
+                    marks=None,
+                    tooltip={"placement": "bottom", "always_visible": False},
+                    updatemode="mouseup",
+                ),
+                dcc.Input(
+                    id=input_id, type="number",
+                    min=0.01, max=10.0, step=0.01, value=float(default_val),
+                    style={"marginTop": 6, "width": 120},
+                ),
+            ],
+            style={"marginBottom": 16},
         )
 
     return html.Div(
         [
             html.H2("2D / 3D Viewer", style={"marginBottom": 6}),
             html.P(
-                "Drop an SWC file. Edges are color-coded by type. "
-                "Edge width follows child node radius. Use type selection and percentile windows to highlight."
+                "Drop an SWC file. Lines are WebGL (fast). "
+                "Use per-type Top-K% (0.01–10) to overlay bright dots at the largest radii for each type."
             ),
             dcc.Upload(
                 id="upload-viewer", multiple=False,
@@ -183,34 +195,19 @@ def _viewer_tab():
             ),
             html.Div(id="viewer-file-info", style={"color": "#555", "marginBottom": 12}),
 
-            # Performance controls
             html.Div(
                 [
                     html.Div(
                         [
-                            html.Label("Performance mode"),
+                            html.Label("Performance"),
                             dcc.Checklist(
                                 id="viewer-performance",
-                                options=[
-                                    {"label": " Quantize widths (fast)", "value": "quantize"},
-                                    {"label": " Hide thin edges", "value": "hide_thin"},
-                                ],
-                                value=["quantize"],  # default ON
+                                options=[{"label": " Hide thin edges", "value": "hide_thin"}],
+                                value=[],
                                 inline=True,
                             ),
                         ],
                         style={"marginRight": 24},
-                    ),
-                    html.Div(
-                        [
-                            html.Label("Width bins per type (when quantized)"),
-                            dcc.Slider(
-                                id="viewer-width-bins",
-                                min=4, max=32, step=1, value=12,
-                                tooltip={"placement": "bottom", "always_visible": False},
-                            ),
-                        ],
-                        style={"flex": 1, "minWidth": 240},
                     ),
                 ],
                 style={"display": "flex", "alignItems": "center", "gap": "18px", "marginBottom": 10},
@@ -248,7 +245,7 @@ def _viewer_tab():
             ),
 
             html.Hr(),
-            html.H4("Types to highlight (percentile windows apply per type)"),
+            html.H4("Types to draw"),
             dcc.Checklist(
                 id="viewer-type-select",
                 options=[
@@ -259,23 +256,30 @@ def _viewer_tab():
                     {"label": "Apical dendrite (4)", "value": "apical dendrite"},
                     {"label": "Custom (5+)", "value": "custom"},
                 ],
-                value=["undefined", "soma", "axon", "basal dendrite", "apical dendrite", "custom"],  # all selected
+                value=["undefined", "soma", "axon", "basal dendrite", "apical dendrite", "custom"],
                 inline=True,
-                style={"marginBottom": 10},
+                style={"marginBottom": 12},
             ),
 
-            html.H4("Percentile windows per type"),
-            html.P("Example: [70,100] highlights the top 30% radii of that type. Outside the window = thin edges."),
+            html.H4("Per-type Top-K% (0.01–10) for overlay dots"),
+            html.P("Example: K=10 → top 10% • K=0.50 → top 0.5% • K=0.01 → most extreme."),
             html.Div(
                 [
-                    html.Div([html.Label("Undefined"), percentile_slider("viewer-range-undefined")], style={"marginBottom": 14}),
-                    html.Div([html.Label("Soma"), percentile_slider("viewer-range-soma")], style={"marginBottom": 14}),
-                    html.Div([html.Label("Axon"), percentile_slider("viewer-range-axon")], style={"marginBottom": 14}),
-                    html.Div([html.Label("Basal dendrite"), percentile_slider("viewer-range-basal")], style={"marginBottom": 14}),
-                    html.Div([html.Label("Apical dendrite"), percentile_slider("viewer-range-apical")], style={"marginBottom": 14}),
-                    html.Div([html.Label("Custom (type≥5)"), percentile_slider("viewer-range-custom")], style={"marginBottom": 14}),
+                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", 10.0),
+                    topk_row("Soma",            "viewer-topk-soma",      "viewer-topk-soma-input",      10.0),
+                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      10.0),
+                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     10.0),
+                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    10.0),
+                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    10.0),
                 ],
-                style={"maxWidth": 760},
+                style={"maxWidth": 860},
+            ),
+
+            # Single source of truth for K%
+            dcc.Store(
+                id="viewer-topk-store",
+                data={"undefined": 10.0, "soma": 10.0, "axon": 10.0,
+                      "basal dendrite": 10.0, "apical dendrite": 10.0, "custom": 10.0},
             ),
 
             dcc.Store(id="store-viewer-df"),

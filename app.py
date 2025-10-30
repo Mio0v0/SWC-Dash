@@ -5,6 +5,16 @@ from callbacks import register_callbacks
 from constants import APP_TITLE
 import os
 import sys
+import json
+import orjson
+
+
+def _orjson_dumps(obj, **kwargs):
+    # Fast encoder; supports NumPy for Plotly figures
+    return orjson.dumps(obj, option=orjson.OPT_SERIALIZE_NUMPY).decode()
+
+json.dumps = _orjson_dumps
+
 
 def get_assets_path():
     """Return correct path for assets whether running normally or as frozen app."""
@@ -36,4 +46,3 @@ def create_app() -> Dash:
         return "OK"
 
     return app
-
