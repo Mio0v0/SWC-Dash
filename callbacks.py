@@ -104,11 +104,11 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     per-callback work.
     """
     if df is None or df.empty:
-        return go.Figure(layout=dict(template="plotly_white", height=900))
+        return go.Figure(layout=dict(template="plotly_white", height=520))
 
     tree = build_tree_cache(df)
     if tree.size == 0:
-        return go.Figure(layout=dict(template="plotly_white", height=900))
+        return go.Figure(layout=dict(template="plotly_white", height=520))
 
     coords = tree.xyz
     offsets = tree.child_offsets
@@ -211,7 +211,7 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         template="plotly_white",
         scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z", aspectmode="data"),
-        height=900,
+        height=520,
         margin=dict(l=10, r=10, t=10, b=10),
         legend_title_text="Type",
     )
@@ -593,9 +593,11 @@ def register_callbacks(app):
         else:
             a1, a2, xlab, ylab = "x", "y", "X", "Y"
 
-        X = df[a1].to_numpy(np.float32)
-        Y = df[a2].to_numpy(np.float32)
-        Z = df["z"].to_numpy(np.float32)
+        X2 = df[a1].to_numpy(np.float32)
+        Y2 = df[a2].to_numpy(np.float32)
+        coords_x = df["x"].to_numpy(np.float32)
+        coords_y = df["y"].to_numpy(np.float32)
+        coords_z = df["z"].to_numpy(np.float32)
         R = df["radius"].to_numpy(np.float32)
         L = np.array(df["label"].tolist())
         P = df["perc"].to_numpy(np.float32)
@@ -604,7 +606,9 @@ def register_callbacks(app):
 
         tree = build_tree_cache(df)
         if tree.child_indices.size == 0:
-            return go.Figure(), go.Figure()
+            fig2d = go.Figure(layout=dict(template="plotly_white", xaxis_title=xlab, yaxis_title=ylab))
+            fig3d = go.Figure(layout=dict(template="plotly_white", scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z")))
+            return fig2d, fig3d
         e_u = np.repeat(np.arange(tree.size, dtype=np.int32), np.diff(tree.child_offsets))
         e_v = tree.child_indices.astype(np.int32, copy=False)
 
@@ -634,8 +638,8 @@ def register_callbacks(app):
                 continue
             uu = e_u[mask_lbl];
             vv = e_v[mask_lbl]
-            x0, y0 = X[uu], Y[uu]
-            x1, y1 = X[vv], Y[vv]
+            x0, y0 = X2[uu], Y2[uu]
+            x1, y1 = X2[vv], Y2[vv]
             Xs, Ys = segments_2d(x0, y0, x1, y1)
             cd = np.repeat(R[vv], 2).astype(np.float32)
 
@@ -667,7 +671,7 @@ def register_callbacks(app):
             if cand.size == 0:
                 continue
             vv = e_v[cand]
-            dot_x, dot_y = X[vv], Y[vv]
+            dot_x, dot_y = X2[vv], Y2[vv]
             sz = np.clip((DOT_SCALE * R[vv]).astype(np.float32), DOT_MIN, DOT_MAX)
             label_text = f"Top-{fmt_k(K)}"
             if has_id:
@@ -704,8 +708,8 @@ def register_callbacks(app):
                 continue
             uu = e_u[lv];
             vv = e_v[lv]
-            x0, y0, z0 = X[uu], Y[uu], Z[uu]
-            x1, y1, z1 = X[vv], Y[vv], Z[vv]
+            x0, y0, z0 = coords_x[uu], coords_y[uu], coords_z[uu]
+            x1, y1, z1 = coords_x[vv], coords_y[vv], coords_z[vv]
             m = uu.size
             X3 = np.empty(m * 3, dtype=np.float32);
             Y3 = np.empty(m * 3, dtype=np.float32);

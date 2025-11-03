@@ -27,7 +27,15 @@ def _dendrogram_tab():
 
             # 3D plot (under upload) and larger
             html.H4("3D Structure (edges only, color-coded by type)", style={"marginTop": 6}),
-            dcc.Graph(id="fig-dendro-3d", style={"height": 900, "marginBottom": 5}),  # <-- taller box
+            dcc.Graph(
+                id="fig-dendro-3d",
+                style={
+                    "height": 520,
+                    "maxWidth": "640px",
+                    "width": "100%",
+                    "margin": "0 auto 8px",
+                },
+            ),
 
             # Dendrogram editor
             html.Div(

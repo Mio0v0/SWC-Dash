@@ -117,9 +117,6 @@ def make_dendrogram_figure(df: pd.DataFrame) -> Tuple[go.Figure, Dict[str, Any]]
     # ensure legend always shows all types
     ALL_LABELS = ["undefined", "soma", "axon", "basal dendrite", "apical dendrite", "custom"]
     present_labels = {tr.legendgroup for tr in horiz_traces if getattr(tr, "legendgroup", None)}
-    root_in_traces = root_label in present_labels if root_label is not None else False
-    if root_label is not None:
-        present_labels.add(root_label)
     for label in ALL_LABELS:
         if label not in present_labels:
             horiz_traces.append(
@@ -147,18 +144,14 @@ def make_dendrogram_figure(df: pd.DataFrame) -> Tuple[go.Figure, Dict[str, Any]]
 
         root_color = DEFAULT_COLORS.get(root_label, "#666")
         root_id = int(tree.ids[root])
-        root_showlegend = not root_in_traces
-        legend_name = "custom (5+)" if root_label == "custom" else (root_label or "root")
-
         fig.add_trace(
             go.Scattergl(
                 x=[dot_x], y=[y_root], mode="markers",
                 marker=dict(size=ROOT_DOT_SIZE, color=root_color, line=dict(width=1, color="#333")),
                 hoverinfo="text", text=[f"id={root_id} (root)"],
                 customdata=[[int(root)]],
-                showlegend=root_showlegend,
+                showlegend=False,
                 legendgroup=root_label if root_label is not None else "root",
-                name=legend_name if root_showlegend else None,
             )
         )
         fig.add_trace(
