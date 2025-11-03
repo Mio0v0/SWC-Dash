@@ -9,8 +9,8 @@ from dash import Input, Output, State, dcc
 
 from swc_io import parse_swc_text_preserve_tokens, write_swc_to_bytes_preserve_tokens
 from graph_build import make_dendrogram_figure
-from graph_utils import subtree_nodes, children_lists
-from constants import color_for_type, label_for_type, SWC_COLS, DEFAULT_COLORS
+from graph_utils import subtree_nodes, build_tree_cache
+from constants import color_for_type, label_for_type, DEFAULT_COLORS
 from validation_core import run_format_validation_from_text
 
 from layout import _dendrogram_tab, _validation_tab, _viewer_tab
@@ -99,70 +99,111 @@ def make_swc_plus_bytes_from_df(df: pd.DataFrame, filename: str | None) -> bytes
 
 def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     """
-    Build a 3D figure with:
-      • edges color-coded by child's type/label (as before)
-      • soma nodes (type==1) explicitly rendered as spheres (markers)
+    Build a 3D figure with edges color-coded by the child node's label and
+    soma nodes rendered as spheres. Uses the shared TreeCache to minimise
+    per-callback work.
     """
     if df is None or df.empty:
         return go.Figure(layout=dict(template="plotly_white", height=900))
 
-    arr = df[SWC_COLS].to_records(index=False)
-    kids = children_lists(arr)
+    tree = build_tree_cache(df)
+    if tree.size == 0:
+        return go.Figure(layout=dict(template="plotly_white", height=900))
+
+    coords = tree.xyz
+    offsets = tree.child_offsets
+    children = tree.child_indices
+    parent_idx = np.repeat(np.arange(tree.size, dtype=np.int32), np.diff(offsets))
+    labels_arr = np.array([label_for_type(int(t)) for t in tree.types.tolist()], dtype=object)
+    edge_labels = labels_arr[children]
 
     traces = []
+    present_labels = set()
 
-    # ---- Edges (unchanged logic): color by CHILD's label ----
     for lbl, color in DEFAULT_COLORS.items():
-        xs, ys, zs = [], [], []
-        for u in range(len(arr)):
-            for v in kids[u]:
-                tval = int(arr[v][1])  # child's type
-                if label_for_type(tval) != lbl:
-                    continue
-                x0, y0, z0 = float(arr[u][2]), float(arr[u][3]), float(arr[u][4])
-                x1, y1, z1 = float(arr[v][2]), float(arr[v][3]), float(arr[v][4])
-                xs += [x0, x1, None]
-                ys += [y0, y1, None]
-                zs += [z0, z1, None]
-        if xs:
-            traces.append(
-                go.Scatter3d(
-                    x=xs, y=ys, z=zs, mode="lines",
-                    line=dict(width=2.2, color=color),
-                    hoverinfo="skip", showlegend=True, name=lbl, legendgroup=lbl
-                )
-            )
+        mask = edge_labels == lbl
+        if not np.any(mask):
+            continue
 
-    # ---- Soma spheres (type==1): show even if there are no edges) ----
-    soma_x, soma_y, soma_z, soma_sizes = [], [], [], []
-    soma_color = DEFAULT_COLORS.get("soma", "#d62728")  # fallback color if needed
+        present_labels.add(lbl)
+        p_idx = parent_idx[mask]
+        c_idx = children[mask]
+        m = int(mask.sum())
 
-    for i in range(len(arr)):
-        try:
-            if int(arr[i][1]) == 1:  # soma type
-                soma_x.append(float(arr[i][2]))
-                soma_y.append(float(arr[i][3]))
-                soma_z.append(float(arr[i][4]))
-                # If radius present (SWC column 6 / index 5), scale a bit for visibility
-                try:
-                    r = float(arr[i][5])
-                    soma_sizes.append(max(5.0, 6.0 * r))  # tweakable scale
-                except Exception:
-                    soma_sizes.append(8.0)  # default size if radius missing
-        except Exception:
-            pass
+        xs = np.empty(m * 3, dtype=np.float32)
+        ys = np.empty(m * 3, dtype=np.float32)
+        zs = np.empty(m * 3, dtype=np.float32)
 
-    if soma_x:
+        xs[0::3] = coords[p_idx, 0]
+        xs[1::3] = coords[c_idx, 0]
+        xs[2::3] = np.nan
+
+        ys[0::3] = coords[p_idx, 1]
+        ys[1::3] = coords[c_idx, 1]
+        ys[2::3] = np.nan
+
+        zs[0::3] = coords[p_idx, 2]
+        zs[1::3] = coords[c_idx, 2]
+        zs[2::3] = np.nan
+
         traces.append(
             go.Scatter3d(
-                x=soma_x, y=soma_y, z=soma_z,
+                x=xs.tolist(), y=ys.tolist(), z=zs.tolist(),
+                mode="lines",
+                line=dict(width=2.2, color=color),
+                hoverinfo="skip",
+                showlegend=True,
+                name=lbl if lbl != "custom" else "custom (5+)",
+                legendgroup=lbl,
+            )
+        )
+
+    soma_idx = np.flatnonzero(tree.types == 1)
+    if soma_idx.size:
+        present_labels.add("soma")
+        radii = np.nan_to_num(tree.radius[soma_idx], nan=0.0, posinf=0.0, neginf=0.0)
+        soma_sizes = np.maximum(5.0, 6.0 * radii).astype(np.float32)
+        soma_sizes = soma_sizes.tolist()
+        soma_color = DEFAULT_COLORS.get("soma", "#d62728")
+        traces.append(
+            go.Scatter3d(
+                x=coords[soma_idx, 0].astype(float).tolist(),
+                y=coords[soma_idx, 1].astype(float).tolist(),
+                z=coords[soma_idx, 2].astype(float).tolist(),
                 mode="markers",
                 marker=dict(size=soma_sizes, color=soma_color, opacity=0.95),
-                name="soma",
-                legendgroup="soma",
                 hoverinfo="text",
-                text=[f"soma id={int(arr[i][0])}" for i in range(len(arr)) if int(arr[i][1]) == 1],
+                text=[f"soma id={int(tree.ids[i])}" for i in soma_idx.tolist()],
+                legendgroup="soma",
+                showlegend=False,
+            )
+        )
+        traces.append(
+            go.Scatter3d(
+                x=[None], y=[None], z=[None],
+                mode="lines",
+                line=dict(width=2.2, color=soma_color),
+                hoverinfo="skip",
+                legendgroup="soma",
+                name="soma",
                 showlegend=True,
+                visible="legendonly",
+            )
+        )
+
+    for lbl, color in DEFAULT_COLORS.items():
+        if lbl in present_labels:
+            continue
+        traces.append(
+            go.Scatter3d(
+                x=[None], y=[None], z=[None],
+                mode="lines",
+                line=dict(width=2.2, color=color),
+                hoverinfo="skip",
+                showlegend=True,
+                name=lbl if lbl != "custom" else "custom (5+)",
+                legendgroup=lbl,
+                visible="legendonly",
             )
         )
 
@@ -270,12 +311,13 @@ def register_callbacks(app):
         Input("btn-apply", "n_clicks"),
         State("selected-node-id", "children"),
         State("new-type", "value"),
+        State("apply-scope", "value"),
         State("store-working-df", "data"),
         State("store-dendro-info", "data"),
         State("table-changes", "data"),
         prevent_initial_call=True,
     )
-    def apply_type_change(n, selected_swc_id, new_type, df_records, info, table):
+    def apply_type_change(n, selected_swc_id, new_type, scope_mode, df_records, info, table):
         base_chip_style = {
             "display": "inline-block", "width": "12px", "height": "12px",
             "borderRadius": "2px", "marginRight": "6px",
@@ -312,7 +354,14 @@ def register_callbacks(app):
         v = int(matches[0])
 
         kids = info["kids"]
-        subtree = subtree_nodes(kids, v)
+        scope_mode = (scope_mode or "subtree").lower()
+        if scope_mode not in {"subtree", "node"}:
+            scope_mode = "subtree"
+
+        if scope_mode == "node":
+            subtree = [int(v)]
+        else:
+            subtree = subtree_nodes(kids, v)
 
         new_t = int(new_type)
         old_types = df.loc[subtree, "type"].to_numpy().tolist()
@@ -322,13 +371,21 @@ def register_callbacks(app):
         node_ids = df.loc[subtree, "id"].to_numpy()
         for nid, old in zip(node_ids, old_types):
             changes_batch.append(
-                {"node_id": int(nid), "old_type": int(old), "new_type": new_t, "scope": "subtree"}
+                {
+                    "node_id": int(nid),
+                    "old_type": int(old),
+                    "new_type": new_t,
+                    "scope": "node" if scope_mode == "node" else "subtree",
+                }
             )
         table = changes_batch + list(table or [])
 
         dendro_fig, info2 = make_dendrogram_figure(df)
         fig3d = _make_3d_edges_figure(df)  # NEW
-        msg = f"Applied type {new_t} to subtree rooted at SWC id {sel_id} ({len(subtree)} nodes)."
+        if scope_mode == "node":
+            msg = f"Applied type {new_t} to SWC id {sel_id}."
+        else:
+            msg = f"Applied type {new_t} to subtree rooted at SWC id {sel_id} ({len(subtree)} nodes)."
 
         label = label_for_type(new_t)
         chip_style = dict(base_chip_style, backgroundColor=color_for_type(new_t))
@@ -545,18 +602,11 @@ def register_callbacks(app):
         has_id = "id" in df.columns
         ID = df["id"].to_numpy(np.int64) if has_id else None
 
-        arr = df[SWC_COLS].to_records(index=False)
-        kids = children_lists(arr)
-        e_u, e_v = [], []
-        for u in range(len(arr)):
-            ch = kids[u]
-            if ch:
-                e_u.extend([u] * len(ch))
-                e_v.extend(ch)
-        if not e_u:
+        tree = build_tree_cache(df)
+        if tree.child_indices.size == 0:
             return go.Figure(), go.Figure()
-        e_u = np.asarray(e_u, dtype=np.int32)
-        e_v = np.asarray(e_v, dtype=np.int32)
+        e_u = np.repeat(np.arange(tree.size, dtype=np.int32), np.diff(tree.child_offsets))
+        e_v = tree.child_indices.astype(np.int32, copy=False)
 
         def segments_2d(x0, y0, x1, y1):
             m = x0.shape[0]
