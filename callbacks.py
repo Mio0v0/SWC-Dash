@@ -436,8 +436,6 @@ def register_callbacks(app):
         return dcc.send_string(csv_text, out_name)
 
     # =====================================================================
-    #                          2D / 3D VIEWER
-    # =====================================================================
     # ---------------- Viewer: load file ----------------
     @app.callback(
         Output("viewer-file-info", "children"),
@@ -459,33 +457,114 @@ def register_callbacks(app):
         except Exception as e:
             return f"Failed to load: {e}", None
 
-    # ---------------- Helper ----------------
-    def _clamp_round(v):
+
+    # ---------------- Helpers ----------------
+    def _clamp_percent(v):
         try:
             v = float(v)
         except Exception:
             return None
-        v = max(0.01, min(10.0, v))
-        return float(round(v, 2))
+        return float(round(max(0.01, min(10.0, v)), 2))
 
-    # ---------------- A) Controls -> Store (single callback, no cycles) ----------------
+    def _clamp_abs(v):
+        if v in (None, ""):
+            return None
+        try:
+            v = float(v)
+        except Exception:
+            return None
+        return float(round(max(0.0, v), 4))
+
+
+    # ---------------- Bi-directional sync: slider <-> numeric ----------------
     @app.callback(
-        Output("viewer-topk-store", "data"),
+        # numeric inputs
+        Output("viewer-topk-undefined-input", "value"),
+        Output("viewer-topk-soma-input", "value"),
+        Output("viewer-topk-axon-input", "value"),
+        Output("viewer-topk-basal-input", "value"),
+        Output("viewer-topk-apical-input", "value"),
+        Output("viewer-topk-custom-input", "value"),
         # sliders
+        Output("viewer-topk-undefined", "value"),
+        Output("viewer-topk-soma", "value"),
+        Output("viewer-topk-axon", "value"),
+        Output("viewer-topk-basal", "value"),
+        Output("viewer-topk-apical", "value"),
+        Output("viewer-topk-custom", "value"),
+        # inputs
         Input("viewer-topk-undefined", "value"),
         Input("viewer-topk-soma", "value"),
         Input("viewer-topk-axon", "value"),
         Input("viewer-topk-basal", "value"),
         Input("viewer-topk-apical", "value"),
         Input("viewer-topk-custom", "value"),
-        # numeric inputs
         Input("viewer-topk-undefined-input", "value"),
         Input("viewer-topk-soma-input", "value"),
         Input("viewer-topk-axon-input", "value"),
         Input("viewer-topk-basal-input", "value"),
         Input("viewer-topk-apical-input", "value"),
         Input("viewer-topk-custom-input", "value"),
-        # current store
+        prevent_initial_call=True,
+    )
+    def sync_slider_numeric(s_undef, s_soma, s_axon, s_basal, s_apical, s_custom,
+                            n_undef, n_soma, n_axon, n_basal, n_apical, n_custom):
+        ctx = dash.callback_context
+        no = dash.no_update
+        out_numeric = [no]*6
+        out_sliders = [no]*6
+        if not ctx.triggered:
+            return (*out_numeric, *out_sliders)
+
+        src = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        slider_map = {
+            "viewer-topk-undefined": (0, s_undef),
+            "viewer-topk-soma": (1, s_soma),
+            "viewer-topk-axon": (2, s_axon),
+            "viewer-topk-basal": (3, s_basal),
+            "viewer-topk-apical": (4, s_apical),
+            "viewer-topk-custom": (5, s_custom),
+        }
+        numeric_map = {
+            "viewer-topk-undefined-input": (0, n_undef),
+            "viewer-topk-soma-input": (1, n_soma),
+            "viewer-topk-axon-input": (2, n_axon),
+            "viewer-topk-basal-input": (3, n_basal),
+            "viewer-topk-apical-input": (4, n_apical),
+            "viewer-topk-custom-input": (5, n_custom),
+        }
+
+        if src in slider_map:
+            i, val = slider_map[src]
+            v = _clamp_percent(val)
+            tmp = list(out_numeric); tmp[i] = v
+            return (*tmp, *out_sliders)
+
+        if src in numeric_map:
+            i, val = numeric_map[src]
+            v = _clamp_percent(val)
+            tmp = list(out_sliders); tmp[i] = v
+            return (*out_numeric, *tmp)
+
+        return (*out_numeric, *out_sliders)
+
+
+    # ---------------- K% -> store ----------------
+    @app.callback(
+        Output("viewer-topk-store", "data"),
+        Input("viewer-topk-undefined", "value"),
+        Input("viewer-topk-soma", "value"),
+        Input("viewer-topk-axon", "value"),
+        Input("viewer-topk-basal", "value"),
+        Input("viewer-topk-apical", "value"),
+        Input("viewer-topk-custom", "value"),
+        Input("viewer-topk-undefined-input", "value"),
+        Input("viewer-topk-soma-input", "value"),
+        Input("viewer-topk-axon-input", "value"),
+        Input("viewer-topk-basal-input", "value"),
+        Input("viewer-topk-apical-input", "value"),
+        Input("viewer-topk-custom-input", "value"),
         State("viewer-topk-store", "data"),
         prevent_initial_call=True,
     )
@@ -508,7 +587,6 @@ def register_callbacks(app):
             "viewer-topk-basal": ("basal dendrite", s_basal),
             "viewer-topk-apical": ("apical dendrite", s_apical),
             "viewer-topk-custom": ("custom", s_custom),
-
             "viewer-topk-undefined-input": ("undefined", n_undef),
             "viewer-topk-soma-input": ("soma", n_soma),
             "viewer-topk-axon-input": ("axon", n_axon),
@@ -519,14 +597,54 @@ def register_callbacks(app):
 
         if src in mapping:
             lbl, raw = mapping[src]
-            val = _clamp_round(raw)
+            val = _clamp_percent(raw)
             if val is not None:
                 data[lbl] = val
                 return data
 
         return dash.no_update
 
-    # ---------------- B) Draw figures (read store) ----------------
+
+    # ---------------- ABS -> store ----------------
+    @app.callback(
+        Output("viewer-abs-store", "data"),
+        Input("viewer-abs-undefined", "value"),
+        Input("viewer-abs-soma", "value"),
+        Input("viewer-abs-axon", "value"),
+        Input("viewer-abs-basal", "value"),
+        Input("viewer-abs-apical", "value"),
+        Input("viewer-abs-custom", "value"),
+        State("viewer-abs-store", "data"),
+        prevent_initial_call=True,
+    )
+    def abs_inputs_to_store(a_undef, a_soma, a_axon, a_basal, a_apical, a_custom, store):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update
+
+        src = ctx.triggered[0]["prop_id"].split(".")[0]
+        data = dict(store or {
+            "undefined": None, "soma": None, "axon": None,
+            "basal dendrite": None, "apical dendrite": None, "custom": None
+        })
+
+        mapping = {
+            "viewer-abs-undefined": ("undefined", a_undef),
+            "viewer-abs-soma": ("soma", a_soma),
+            "viewer-abs-axon": ("axon", a_axon),
+            "viewer-abs-basal": ("basal dendrite", a_basal),
+            "viewer-abs-apical": ("apical dendrite", a_apical),
+            "viewer-abs-custom": ("custom", a_custom),
+        }
+        if src in mapping:
+            lbl, raw = mapping[src]
+            data[lbl] = _clamp_abs(raw)
+            return data
+
+        return dash.no_update
+
+
+    # ---------------- Draw figures (edges unfiltered; overlay uses MAX rule) ----------------
     @app.callback(
         Output("fig-view-2d", "figure"),
         Output("fig-view-3d", "figure"),
@@ -535,9 +653,10 @@ def register_callbacks(app):
         Input("viewer-type-select", "value"),
         Input("viewer-performance", "value"),
         Input("viewer-topk-store", "data"),
+        Input("viewer-abs-store", "data"),
         prevent_initial_call=True,
     )
-    def viewer_draw(df_records, view, type_selected, perf_flags, topk_store):
+    def viewer_draw(df_records, view, type_selected, perf_flags, topk_store, abs_store):
         if not df_records:
             return go.Figure(), go.Figure()
 
@@ -546,46 +665,20 @@ def register_callbacks(app):
         DOT_COLOR, DOT_EDGE_COLOR = "rgba(170,0,255,0.95)", "white"
         DOT_SCALE, DOT_MIN, DOT_MAX = 4.0, 3.0, 24.0
 
-        def fmt_k(k: float) -> str:
-            if abs(k - round(k)) < 1e-6:
-                return f"{int(round(k))}%"
-            s = f"{k:.2f}".rstrip("0").rstrip(".")
-            return f"{s}%"
+        LABELS = ["undefined", "soma", "axon", "basal dendrite", "apical dendrite", "custom"]
 
         df = pd.DataFrame(df_records).copy()
         for col in ("x", "y", "z", "radius", "type"):
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         df["label"] = [label_for_type(int(t)) for t in df["type"].tolist()]
 
-        # percentiles by type
-        perc = np.zeros(len(df), dtype=np.float32)
-        for lbl, sub in df.groupby("label"):
-            idx = sub.index.to_numpy()
-            rvals = sub["radius"].to_numpy(np.float32)
-            if rvals.size > 1:
-                order = np.argsort(rvals)
-                ranks = np.empty_like(order, dtype=np.float32)
-                ranks[order] = np.arange(1, rvals.size + 1, dtype=np.float32)
-                p = 100.0 * (ranks - 1.0) / float(max(1, rvals.size - 1))
-            else:
-                p = np.array([100.0 if (rvals.size == 1 and rvals[0] > 0.0) else 0.0], dtype=np.float32)
-            perc[idx] = p
-        df["perc"] = perc
-
         def clamp_k(v):
             return max(0.01, min(10.0, float(v))) if v is not None else 10.0
 
-        d = topk_store or {}
-        topk_by_label = {
-            "undefined": clamp_k(d.get("undefined", 10.0)),
-            "soma": clamp_k(d.get("soma", 10.0)),
-            "axon": clamp_k(d.get("axon", 10.0)),
-            "basal dendrite": clamp_k(d.get("basal dendrite", 10.0)),
-            "apical dendrite": clamp_k(d.get("apical dendrite", 10.0)),
-            "custom": clamp_k(d.get("custom", 10.0)),
-        }
+        topk = {lbl: clamp_k((topk_store or {}).get(lbl, 10.0)) for lbl in LABELS}
+        abs_thr = {lbl: (abs_store or {}).get(lbl, None) for lbl in LABELS}
 
-        # choose axes
+        # Axes
         if view == "xz":
             a1, a2, xlab, ylab = "x", "z", "X", "Z"
         elif view == "yz":
@@ -600,15 +693,16 @@ def register_callbacks(app):
         coords_z = df["z"].to_numpy(np.float32)
         R = df["radius"].to_numpy(np.float32)
         L = np.array(df["label"].tolist())
-        P = df["perc"].to_numpy(np.float32)
         has_id = "id" in df.columns
         ID = df["id"].to_numpy(np.int64) if has_id else None
 
+        # Tree for edges
         tree = build_tree_cache(df)
         if tree.child_indices.size == 0:
             fig2d = go.Figure(layout=dict(template="plotly_white", xaxis_title=xlab, yaxis_title=ylab))
             fig3d = go.Figure(layout=dict(template="plotly_white", scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z")))
             return fig2d, fig3d
+
         e_u = np.repeat(np.arange(tree.size, dtype=np.int32), np.diff(tree.child_offsets))
         e_v = tree.child_indices.astype(np.int32, copy=False)
 
@@ -616,15 +710,25 @@ def register_callbacks(app):
             m = x0.shape[0]
             Xs = np.empty(m * 3, dtype=np.float32)
             Ys = np.empty(m * 3, dtype=np.float32)
-            Xs[0::3] = x0;
-            Xs[1::3] = x1;
-            Xs[2::3] = np.nan
-            Ys[0::3] = y0;
-            Ys[1::3] = y1;
-            Ys[2::3] = np.nan
+            Xs[0::3] = x0; Xs[1::3] = x1; Xs[2::3] = np.nan
+            Ys[0::3] = y0; Ys[1::3] = y1; Ys[2::3] = np.nan
             return Xs, Ys
 
-        # 2D base
+        # Effective per-label cutoff (MAX of percentile & absolute)
+        eff_cut_by_label = {}
+        for lbl in DEFAULT_COLORS.keys():
+            mask_lbl = (L[e_v] == lbl)
+            r_lbl = R[e_v][mask_lbl]
+            if r_lbl.size == 0:
+                eff_cut_by_label[lbl] = -np.inf
+                continue
+            K = float(topk.get(lbl, 10.0))
+            pct_cut = np.percentile(r_lbl, 100.0 - K)
+            abs_cut = abs_thr.get(lbl, None)
+            abs_cut = 0.0 if (abs_cut is None) else float(abs_cut)
+            eff_cut_by_label[lbl] = max(pct_cut, abs_cut)
+
+        # ---- 2D base edges (UNFILTERED — only hide_thin affects visibility)
         traces2d, legend2d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
             mask_lbl = (L[e_v] == lbl)
@@ -636,14 +740,13 @@ def register_callbacks(app):
                     showlegend=True, visible="legendonly",
                 ))
                 continue
-            uu = e_u[mask_lbl];
-            vv = e_v[mask_lbl]
+            uu = e_u[mask_lbl]; vv = e_v[mask_lbl]
             x0, y0 = X2[uu], Y2[uu]
             x1, y1 = X2[vv], Y2[vv]
             Xs, Ys = segments_2d(x0, y0, x1, y1)
             cd = np.repeat(R[vv], 2).astype(np.float32)
 
-            if "hide_thin" not in (perf_flags or []):
+            if not hide_thin:
                 traces2d.append(go.Scattergl(
                     x=Xs, y=Ys, mode="lines",
                     line=dict(width=THIN_2D, color=color),
@@ -660,30 +763,30 @@ def register_callbacks(app):
                     showlegend=True, visible="legendonly",
                 ))
 
-        # 2D Top-K% dots
+        # ---- 2D overlay dots (filtered by MAX rule)
         selected_labels = set(type_selected or [])
-        for lbl, _ in DEFAULT_COLORS.items():
+        for lbl, color in DEFAULT_COLORS.items():
             if lbl not in selected_labels:
                 continue
-            K = float(topk_by_label.get(lbl, 10.0))
-            thresh = 100.0 - K
-            cand = np.where((L[e_v] == lbl) & (P[e_v] >= thresh))[0]
-            if cand.size == 0:
+
+            mask_lbl = (L[e_v] == lbl) & (R[e_v] >= eff_cut_by_label[lbl])
+            if not np.any(mask_lbl):
                 continue
-            vv = e_v[cand]
+
+            vv = e_v[mask_lbl]
             dot_x, dot_y = X2[vv], Y2[vv]
             sz = np.clip((DOT_SCALE * R[vv]).astype(np.float32), DOT_MIN, DOT_MAX)
-            label_text = f"Top-{fmt_k(K)}"
+
             if has_id:
-                hover = [f"{label_text} • id={int(ID[v])} • radius={float(R[v]):.4f} • {lbl}" for v in vv]
+                hover = [f"id={int(ID[v])} • radius={float(R[v]):.4f} • {lbl}" for v in vv]
             else:
-                hover = [f"{label_text} • radius={float(R[v]):.4f} • {lbl}" for v in vv]
+                hover = [f"radius={float(R[v]):.4f} • {lbl}" for v in vv]
 
             traces2d.append(go.Scatter(
                 x=dot_x, y=dot_y, mode="markers",
                 marker=dict(size=sz, color=DOT_COLOR, line=dict(color=DOT_EDGE_COLOR, width=0.8), opacity=0.95),
                 hovertemplate="%{text}<extra></extra>", text=hover,
-                name=f"{lbl} ({label_text})", legendgroup=f"{lbl}-topk", showlegend=False,
+                name=f"{lbl} (overlay: max % & abs)", legendgroup=f"{lbl}-overlay", showlegend=False,
             ))
 
         fig2d = go.Figure(traces2d)
@@ -694,7 +797,7 @@ def register_callbacks(app):
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
 
-        # 3D base
+        # ---- 3D base (edges only, unfiltered)
         traces3d, legend3d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
             lv = (L[e_v] == lbl)
@@ -706,23 +809,14 @@ def register_callbacks(app):
                     showlegend=True, visible="legendonly",
                 ))
                 continue
-            uu = e_u[lv];
-            vv = e_v[lv]
+            uu = e_u[lv]; vv = e_v[lv]
             x0, y0, z0 = coords_x[uu], coords_y[uu], coords_z[uu]
             x1, y1, z1 = coords_x[vv], coords_y[vv], coords_z[vv]
             m = uu.size
-            X3 = np.empty(m * 3, dtype=np.float32);
-            Y3 = np.empty(m * 3, dtype=np.float32);
-            Z3 = np.empty(m * 3, dtype=np.float32)
-            X3[0::3] = x0;
-            X3[1::3] = x1;
-            X3[2::3] = np.nan
-            Y3[0::3] = y0;
-            Y3[1::3] = y1;
-            Y3[2::3] = np.nan
-            Z3[0::3] = z0;
-            Z3[1::3] = z1;
-            Z3[2::3] = np.nan
+            X3 = np.empty(m * 3, dtype=np.float32); Y3 = np.empty(m * 3, dtype=np.float32); Z3 = np.empty(m * 3, dtype=np.float32)
+            X3[0::3] = x0; X3[1::3] = x1; X3[2::3] = np.nan
+            Y3[0::3] = y0; Y3[1::3] = y1; Y3[2::3] = np.nan
+            Z3[0::3] = z0; Z3[1::3] = z1; Z3[2::3] = np.nan
 
             traces3d.append(go.Scatter3d(
                 x=X3, y=Y3, z=Z3, mode="lines",
@@ -739,6 +833,8 @@ def register_callbacks(app):
         )
 
         return fig2d, fig3d
+
+
 
     # =====================================================================
     #                          VALIDATION PAGE

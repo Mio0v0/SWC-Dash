@@ -174,34 +174,72 @@ def _validation_tab():
     )
 
 
+from dash import html, dcc
+
 def _viewer_tab():
-    def topk_row(label_txt: str, slider_id: str, input_id: str, default_val: float = 10.0):
+    def topk_row(
+        label_txt: str,
+        slider_id: str, input_id: str,
+        abs_input_id: str,
+        default_val: float = 10.0
+    ):
+        """
+        Per-type controls:
+          - Top-K% slider + numeric input (K in [0.01, 10])
+          - Absolute radius numeric input (>= 0)
+        Both control the SAME overlay layer; effective cutoff = max(percentile, absolute).
+        NOTE: No style prop on dcc.Slider; wrap inside a styled div.
+        """
         return html.Div(
             [
                 html.Label(label_txt, style={"display": "block", "marginBottom": 6}),
-                dcc.Slider(
-                    id=slider_id,
-                    min=0.01, max=10.0, step=0.01, value=float(default_val),
-                    marks=None,
-                    tooltip={"placement": "bottom", "always_visible": False},
-                    updatemode="mouseup",
+                # K% controls
+                html.Div(
+                    [
+                        html.Div(
+                            dcc.Slider(
+                                id=slider_id,
+                                min=0.01, max=10.0, step=0.01, value=float(default_val),
+                                marks=None,
+                                tooltip={"placement": "bottom", "always_visible": False},
+                                updatemode="mouseup",
+                            ),
+                            style={"flex": 1, "minWidth": 220}
+                        ),
+                        dcc.Input(
+                            id=input_id, type="number",
+                            min=0.01, max=10.0, step=0.01, value=float(default_val),
+                            style={"marginLeft": 10, "width": 120},
+                        ),
+                        html.Span(" Top-K %", style={"marginLeft": 6, "color": "#666"}),
+                    ],
+                    style={"display": "flex", "alignItems": "center"},
                 ),
-                dcc.Input(
-                    id=input_id, type="number",
-                    min=0.01, max=10.0, step=0.01, value=float(default_val),
-                    style={"marginTop": 6, "width": 120},
+                # Absolute controls
+                html.Div(
+                    [
+                        dcc.Input(
+                            id=abs_input_id, type="number",
+                            placeholder="Absolute radius ≥ ...",
+                            debounce=True, min=0, step=0.01,
+                            style={"width": 220, "marginTop": 6},
+                        ),
+                        html.Span(" Absolute radius", style={"marginLeft": 8, "color": "#666"}),
+                    ],
+                    style={"display": "flex", "alignItems": "center"},
                 ),
             ],
-            style={"marginBottom": 16},
+            style={"marginBottom": 18},
         )
 
     return html.Div(
         [
             html.H2("2D / 3D Viewer", style={"marginBottom": 6}),
             html.P(
-                "Drop an SWC file. Lines are WebGL (fast). "
-                "Use per-type Top-K% (0.01–10) to overlay bright dots at the largest radii for each type."
+                "Per-type Top-K% (0.01–10) and per-type absolute radius control the same overlay. "
+                "The effective cutoff is max(percentile cutoff, absolute cutoff) — must pass both."
             ),
+
             dcc.Upload(
                 id="upload-viewer", multiple=False,
                 children=html.Div(["Drag & drop or ", html.A("select an SWC file to view")]),
@@ -279,30 +317,36 @@ def _viewer_tab():
                 style={"marginBottom": 12},
             ),
 
-            html.H4("Per-type Top-K% (0.01–10) for overlay dots"),
-            html.P("Example: K=10 → top 10% • K=0.50 → top 0.5% • K=0.01 → most extreme."),
+            html.H4("Per-type Top-K% and Absolute Radius"),
+            html.P("Examples: K=10 → top 10% • K=0.50 → top 0.5% • Absolute ≥ 2.5 → radii ≥ 2.5 (must pass both if set)"),
             html.Div(
                 [
-                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", 10.0),
-                    topk_row("Soma",            "viewer-topk-soma",      "viewer-topk-soma-input",      10.0),
-                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      10.0),
-                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     10.0),
-                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    10.0),
-                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    10.0),
+                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", "viewer-abs-undefined", 10.0),
+                    topk_row("Soma",            "viewer-topk-soma",      "viewer-topk-soma-input",      "viewer-abs-soma",      10.0),
+                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      "viewer-abs-axon",      10.0),
+                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     "viewer-abs-basal",     10.0),
+                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    "viewer-abs-apical",    10.0),
+                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    "viewer-abs-custom",    10.0),
                 ],
-                style={"maxWidth": 860},
+                style={"maxWidth": 940},
             ),
 
-            # Single source of truth for K%
+            # Stores
             dcc.Store(
                 id="viewer-topk-store",
                 data={"undefined": 10.0, "soma": 10.0, "axon": 10.0,
                       "basal dendrite": 10.0, "apical dendrite": 10.0, "custom": 10.0},
             ),
+            dcc.Store(
+                id="viewer-abs-store",
+                data={"undefined": None, "soma": None, "axon": None,
+                      "basal dendrite": None, "apical dendrite": None, "custom": None},
+            ),
 
             dcc.Store(id="store-viewer-df"),
         ]
     )
+
 
 
 def build_layout():
