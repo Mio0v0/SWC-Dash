@@ -144,10 +144,6 @@ def _validation_tab():
     return html.Div(
         [
             html.H2("SWC Format Validation", style={"marginBottom": 6}),
-            html.P(
-                "Drop an SWC file to run NeuroM checks. The file is sanitized (type=0 or >7 → 7) before checks."
-            ),
-
             dcc.Upload(
                 id="upload-validate", multiple=False,
                 children=html.Div(["Drag & drop or ", html.A("select an SWC file to validate")]),
@@ -197,8 +193,6 @@ def _viewer_tab():
         Per-type controls:
           - Top-K% slider + numeric input (K in [0.01, 10])
           - Absolute radius numeric input (>= 0)
-        Both control the SAME overlay layer; effective cutoff = max(percentile, absolute).
-        NOTE: No style prop on dcc.Slider; wrap inside a styled div.
         """
         return html.Div(
             [
@@ -246,15 +240,8 @@ def _viewer_tab():
         [
             html.H2("Radii cleaner", style={"marginBottom": 6}),
             html.P(
-                "Per-type Top-K% (0.01–10) and per-type absolute radius control the same overlay. "
-                "The effective cutoff is max(percentile cutoff, absolute cutoff) — must pass both."
+                "Per-type Top-K% (0.01–10) and per-type absolute radius control the overlay. "
             ),
-            html.P(
-                "Note: The plot is drawn from edges. If the first SWC row is a soma that doesn't form an edge, "
-                "a soma dot is added automatically so it is visible; the legend shows soma with its color.",
-                style={"color": "#555"},
-            ),
-
             html.Div(
                 [
                     html.Span("File source: "),
