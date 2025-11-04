@@ -158,26 +158,26 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
             )
         )
 
-    soma_idx = np.flatnonzero(tree.types == 1)
-    if soma_idx.size:
+    # Only draw a dot for the first row if it is soma
+    if tree.size > 0 and int(tree.types[0]) == 1:
         present_labels.add("soma")
-        radii = np.nan_to_num(tree.radius[soma_idx], nan=0.0, posinf=0.0, neginf=0.0)
-        soma_sizes = np.maximum(5.0, 6.0 * radii).astype(np.float32)
-        soma_sizes = soma_sizes.tolist()
         soma_color = DEFAULT_COLORS.get("soma", "#d62728")
+        r0 = float(np.nan_to_num(tree.radius[0], nan=0.0, posinf=0.0, neginf=0.0))
+        s0 = float(max(5.0, 6.0 * r0))
         traces.append(
             go.Scatter3d(
-                x=coords[soma_idx, 0].astype(float).tolist(),
-                y=coords[soma_idx, 1].astype(float).tolist(),
-                z=coords[soma_idx, 2].astype(float).tolist(),
+                x=[float(coords[0, 0])],
+                y=[float(coords[0, 1])],
+                z=[float(coords[0, 2])],
                 mode="markers",
-                marker=dict(size=soma_sizes, color=soma_color, opacity=0.95),
+                marker=dict(size=[s0], color=soma_color, opacity=0.95),
                 hoverinfo="text",
-                text=[f"soma id={int(tree.ids[i])}" for i in soma_idx.tolist()],
+                text=[f"soma id={int(tree.ids[0])}"],
                 legendgroup="soma",
                 showlegend=False,
             )
         )
+        # Legend line to light up soma in legend
         traces.append(
             go.Scatter3d(
                 x=[None], y=[None], z=[None],
@@ -187,7 +187,6 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
                 legendgroup="soma",
                 name="soma",
                 showlegend=True,
-                # Keep legend colored as a line without changing the plot
                 visible=True,
             )
         )
@@ -207,6 +206,8 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
                 visible="legendonly",
             )
         )
+
+    # Do not add any other first-row marker; only soma case above
 
     fig = go.Figure(data=traces)
     fig.update_layout(
@@ -1042,18 +1043,30 @@ def register_callbacks(app):
             abs_cut = 0.0 if (abs_cut is None) else float(abs_cut)
             eff_cut_by_label[lbl] = max(pct_cut, abs_cut)
 
-        # Precompute if any edges belong to soma label
-        soma_has_edges = bool(np.any(L[e_v] == "soma"))
+        # Determine if the first row is soma and whether soma edges exist
+        first_is_soma = False
+        soma_first_has_edges = False
+        if len(df) > 0:
+            try:
+                first_is_soma = (label_for_type(int(df.iloc[0]["type"])) == "soma")
+            except Exception:
+                first_is_soma = False
+            if first_is_soma:
+                soma_first_has_edges = bool(np.any(L[e_v] == "soma"))
 
         # ---- 2D base edges (UNFILTERED — only hide_thin affects visibility)
         traces2d, legend2d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
             mask_lbl = (L[e_v] == lbl)
             if not np.any(mask_lbl):
-                # For soma with no edges, if we will add a dot later, skip the grey legend-only placeholder.
-                if lbl == "soma":
-                    # We decide whether to add a legend placeholder after we know if a dot will be added.
-                    # Defer: skip placeholder; the soma dot will provide an active legend entry when present.
+                # If first row is soma and soma has no edges, light its legend with a colored line placeholder.
+                if first_is_soma and (lbl == "soma"):
+                    traces2d.append(go.Scattergl(
+                        x=[None], y=[None], mode="lines",
+                        line=dict(width=THIN_2D, color=color),
+                        hoverinfo="skip", name=lbl, legendgroup=lbl,
+                        showlegend=True, visible=True,
+                    ))
                     continue
                 traces2d.append(go.Scattergl(
                     x=[None], y=[None], mode="lines",
@@ -1113,43 +1126,36 @@ def register_callbacks(app):
                 name=f"{lbl} (overlay: max % & abs)", legendgroup=f"{lbl}-overlay", showlegend=False,
             ))
 
-        # ---- Soma dot (always show first row if soma)
-        if len(df) > 0:
-            try:
-                first_type = int(df.iloc[0]["type"])
-                is_soma_first = (label_for_type(first_type) == "soma")
-            except Exception:
-                is_soma_first = False
-            if is_soma_first:
-                if view == "xz":
-                    sx, sy = float(df.iloc[0]["x"]), float(df.iloc[0]["z"])
-                elif view == "yz":
-                    sx, sy = float(df.iloc[0]["y"]), float(df.iloc[0]["z"])
-                else:
-                    sx, sy = float(df.iloc[0]["x"]), float(df.iloc[0]["y"])
-                sr = float(pd.to_numeric(df.iloc[0]["radius"], errors="coerce") or 0.0)
-                sz = max(DOT_MIN, min(DOT_MAX, DOT_SCALE * sr))
+        # ---- Add first-row dot ONLY if it is soma
+        if len(df) > 0 and first_is_soma:
+            if view == "xz":
+                sx, sy = float(df.iloc[0]["x"]), float(df.iloc[0]["z"])
+            elif view == "yz":
+                sx, sy = float(df.iloc[0]["y"]), float(df.iloc[0]["z"])
+            else:
+                sx, sy = float(df.iloc[0]["x"]), float(df.iloc[0]["y"])
+            sr = float(pd.to_numeric(df.iloc[0]["radius"], errors="coerce") or 0.0)
+            sz = max(DOT_MIN, min(DOT_MAX, DOT_SCALE * sr))
+            fcolor = DEFAULT_COLORS.get("soma", "#d62728")
+            traces2d.append(
+                go.Scatter(
+                    x=[sx], y=[sy], mode="markers",
+                    marker=dict(size=sz, color=fcolor, line=dict(color="white", width=1.0), opacity=0.98),
+                    hovertemplate=f"soma • radius={sr:.4f}<extra></extra>",
+                    name="soma", legendgroup="soma",
+                    showlegend=False,
+                )
+            )
+            # If soma has no edges, add a colored line so legend lights up for soma
+            if not soma_first_has_edges:
                 traces2d.append(
-                    go.Scatter(
-                        x=[sx], y=[sy], mode="markers",
-                        marker=dict(size=sz, color=DEFAULT_COLORS.get("soma", "#d62728"),
-                                    line=dict(color="white", width=1.0), opacity=0.98),
-                        hovertemplate=f"soma • radius={sr:.4f}<extra></extra>",
-                        name="soma", legendgroup="soma",
-                        # Keep dot out of legend; we'll add a line legend entry instead when needed.
-                        showlegend=False,
+                    go.Scattergl(
+                        x=[None], y=[None], mode="lines",
+                        line=dict(width=THIN_2D, color=fcolor),
+                        hoverinfo="skip", name="soma", legendgroup="soma",
+                        showlegend=True, visible=True,
                     )
                 )
-                # If soma has no edges, add a line-only legend entry so legend shows a line, not a dot.
-                if not soma_has_edges:
-                    traces2d.append(
-                        go.Scattergl(
-                            x=[None], y=[None], mode="lines",
-                            line=dict(width=THIN_2D, color=DEFAULT_COLORS.get("soma", "#d62728")),
-                            hoverinfo="skip", name="soma", legendgroup="soma",
-                            showlegend=True, visible=True,
-                        )
-                    )
 
         fig2d = go.Figure(traces2d)
         fig2d.update_layout(
