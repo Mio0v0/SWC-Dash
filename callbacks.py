@@ -440,22 +440,24 @@ def register_callbacks(app):
     @app.callback(
         Output("viewer-file-info", "children"),
         Output("store-viewer-df", "data", allow_duplicate=True),
+        Output("store-viewer-filename", "data", allow_duplicate=True),
+        Output("table-viewer-clean-log", "data", allow_duplicate=True),
         Input("upload-viewer", "contents"),
         State("upload-viewer", "filename"),
         prevent_initial_call=True,
     )
     def viewer_load(contents, filename):
         if not contents:
-            return "No file.", None
+            return "No file.", None, None, []
         try:
             text = _decode_uploaded_text(contents)
             df = parse_swc_text_preserve_tokens(text)
             if df.empty:
-                return f"Loaded {filename}: 0 rows.", None
+                return f"Loaded {filename}: 0 rows.", None, filename, []
             msg = f"Loaded {filename} with {len(df)} nodes."
-            return msg, df.to_dict("records")
+            return msg, df.to_dict("records"), filename, []
         except Exception as e:
-            return f"Failed to load: {e}", None
+            return f"Failed to load: {e}", None, filename, []
 
 
     # ---------------- Helpers ----------------
@@ -643,6 +645,204 @@ def register_callbacks(app):
 
         return dash.no_update
 
+
+    # ---------------- Clean Radii ----------------
+    @app.callback(
+        Output("store-viewer-df", "data", allow_duplicate=True),
+        Output("table-viewer-clean-log", "data", allow_duplicate=True),
+        Output("viewer-clean-msg", "children", allow_duplicate=True),
+        Input("btn-viewer-clean", "n_clicks"),
+        State("store-viewer-df", "data"),
+        State("viewer-type-select", "value"),
+        State("viewer-clean-mode", "value"),
+        State("viewer-topk-store", "data"),
+        State("viewer-abs-store", "data"),
+        State("table-viewer-clean-log", "data"),
+        prevent_initial_call=True,
+    )
+    def viewer_clean(n, df_records, type_selected, mode, topk_store, abs_store, log_rows):
+        if not df_records:
+            return dash.no_update, dash.no_update, "Upload a file first."
+
+        try:
+            df = pd.DataFrame(df_records).copy()
+            for col in ("x", "y", "z", "radius", "type"):
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+            # Determine labels to operate on
+            selected_labels = set(type_selected or [])
+            # Always exclude soma from cleaning
+            if "soma" in selected_labels:
+                selected_labels.discard("soma")
+            if not selected_labels:
+                return dash.no_update, dash.no_update, "Select at least one Type."
+
+            # Prepare tree cache
+            cache = build_tree_cache(df)
+            if cache.size == 0:
+                return dash.no_update, dash.no_update, "No nodes to clean."
+
+            # Build label per node
+            labels = np.array([label_for_type(int(t)) for t in df["type"].to_numpy()], dtype=object)
+            radii = df["radius"].to_numpy(dtype=float)
+
+            # For percent mode, compute threshold per label from viewer-topk-store; for absolute, per label from viewer-abs-store
+            cut_by_label = {}
+            if mode == "percent":
+                for lbl in selected_labels:
+                    mask = labels == lbl
+                    vals = radii[mask]
+                    if vals.size == 0:
+                        cut_by_label[lbl] = np.inf  # nothing will pass
+                    else:
+                        # Top-K% per label from store (clamped to [0.01, 10])
+                        K = topk_store.get(lbl, 10.0) if isinstance(topk_store, dict) else 10.0
+                        try:
+                            K = float(K)
+                        except Exception:
+                            K = 10.0
+                        K = max(0.01, min(10.0, K))
+                        pct_cut = float(np.percentile(vals, 100.0 - K))
+                        cut_by_label[lbl] = pct_cut
+            else:
+                # Absolute value per label from store; if None, skip that label
+                for lbl in selected_labels:
+                    thr = None
+                    if isinstance(abs_store, dict):
+                        thr = abs_store.get(lbl, None)
+                    if thr is None:
+                        # mark as skip by setting +inf so mask will be empty
+                        cut_by_label[lbl] = np.inf
+                    else:
+                        try:
+                            cut_by_label[lbl] = float(max(0.0, float(thr)))
+                        except Exception:
+                            cut_by_label[lbl] = np.inf
+
+            # Compute which nodes to clean (build a boolean mask across all labels)
+            n_nodes = len(df)
+            to_clean_mask = np.zeros(n_nodes, dtype=bool)
+            for lbl in selected_labels:
+                thr = cut_by_label.get(lbl, np.inf)
+                if not np.isfinite(thr):
+                    continue
+                mask_lbl = (labels == lbl)
+                if not np.any(mask_lbl):
+                    continue
+                to_clean_mask |= (mask_lbl & (radii >= thr))
+
+            to_clean_idx = np.flatnonzero(to_clean_mask)
+            if to_clean_idx.size == 0:
+                return dash.no_update, log_rows or [], "No nodes met the per-type cutoffs."
+            to_clean_lbl = labels[to_clean_idx].tolist()
+
+            # Pre-compute per-type fallback means
+            #  - mean_outside: mean of nodes OUTSIDE the cleaning range per label
+            #  - mean_all: mean of all nodes per label (used if outside mean unavailable)
+            mean_by_label = {}
+            mean_all_by_label = {}
+            for lbl in selected_labels:
+                mask_lbl = (labels == lbl)
+                # outside-range mean
+                mask_ok = mask_lbl & (~to_clean_mask)
+                vals_ok = radii[mask_ok]
+                mean_by_label[lbl] = float(np.mean(vals_ok)) if vals_ok.size else None
+                # overall label mean
+                vals_all = radii[mask_lbl]
+                mean_all_by_label[lbl] = float(np.mean(vals_all)) if vals_all.size else None
+
+            # For reproducibility: sort by DataFrame index order
+            order = np.argsort(to_clean_idx)
+            to_clean_idx = to_clean_idx[order]
+            to_clean_lbl = [to_clean_lbl[i] for i in order]
+
+            # Apply neighbor averaging
+            parent_index = cache.parent_index
+            child_offsets = cache.child_offsets
+            child_indices = cache.child_indices
+            new_radii = radii.copy()
+            changes = []
+
+            for pos, lbl in zip(to_clean_idx.tolist(), to_clean_lbl):
+                old_r = float(radii[pos])
+
+                neighbors = []
+                # parent
+                p = int(parent_index[pos])
+                parent_ok = (p >= 0) and (not to_clean_mask[p])
+                if parent_ok:
+                    neighbors.append(float(radii[p]))
+                # children: up to N children (2 normally, 3 if no parent)
+                start = int(child_offsets[pos])
+                end = int(child_offsets[pos + 1])
+                kids = child_indices[start:end]
+
+                # If parent unusable (missing or flagged), allow up to 3 children; else up to 2
+                max_children = 2 if parent_ok else 3
+                if kids.size:
+                    # iterate children in order, picking only those not flagged, up to max_children
+                    picked = 0
+                    for k in kids.tolist():
+                        if picked >= max_children:
+                            break
+                        if to_clean_mask[int(k)]:
+                            continue
+                        neighbors.append(float(radii[int(k)]))
+                        picked += 1
+
+                # Use neighbor average only if we have at least 2 valid neighbors (all are < cutoff by construction)
+                if len(neighbors) >= 2:
+                    new_r = float(np.mean(neighbors))
+                else:
+                    # Fallback to per-type mean (outside range); if unavailable, fallback to overall type mean
+                    fallback = mean_by_label.get(lbl, None)
+                    if fallback is None or not np.isfinite(fallback):
+                        fallback = mean_all_by_label.get(lbl, None)
+                    if fallback is None or not np.isfinite(fallback):
+                        continue
+                    new_r = float(fallback)
+                # Enforce new radius strictly below the cutoff for this node's label
+                thr = float(cut_by_label.get(lbl, np.inf))
+                if np.isfinite(thr):
+                    if thr > 0.0:
+                        # push just below threshold if needed
+                        eps_below = np.nextafter(thr, -np.inf)
+                        new_r = min(new_r, eps_below)
+                    else:
+                        # non-positive cutoff: clamp to non-negative domain
+                        new_r = max(0.0, min(new_r, thr))
+                new_radii[pos] = new_r
+
+                changes.append({
+                    "node_id": int(df.iloc[pos]["id"]),
+                    "label": lbl,
+                    "old_radius": round(old_r, 6),
+                    "new_radius": round(new_r, 6),
+                    "mode": mode,
+                    "cutoff": round(float(cut_by_label.get(lbl, np.nan)), 6),
+                })
+
+            if not changes:
+                return dash.no_update, log_rows or [], "No eligible neighbors to average."
+
+            # Write back radii (+ keep token string in sync for saving)
+            df.loc[:, "radius"] = new_radii
+            # Update radius_str where present to reflect new value for changed nodes
+            if "radius_str" in df.columns:
+                for ch in changes:
+                    node_id = ch["node_id"]
+                    # find by id equals (unique IDs in SWC)
+                    row_idx = df.index[df["id"] == int(node_id)]
+                    if len(row_idx) > 0:
+                        df.at[row_idx[0], "radius_str"] = f"{ch['new_radius']:.6f}"
+
+            # Append logs (prepend like dendrogram)
+            new_log = (changes + list(log_rows or []))
+
+            msg = f"Cleaned {len(changes)} node(s). Mode: {'Top-K%' if mode=='percent' else 'Absolute'}."
+            return df.to_dict("records"), new_log, msg
+        except Exception as e:
+            return dash.no_update, dash.no_update, f"Clean failed: {e}"
 
     # ---------------- Draw figures (edges unfiltered; overlay uses MAX rule) ----------------
     @app.callback(
@@ -835,6 +1035,43 @@ def register_callbacks(app):
         return fig2d, fig3d
 
 
+
+    # ---------------- Viewer: downloads (cleaned SWC & clean log) ----------------
+    @app.callback(
+        Output("download-viewer-clean-swc", "data"),
+        Input("btn-dl-viewer-clean-swc", "n_clicks"),
+        State("store-viewer-df", "data"),
+        State("store-viewer-filename", "data"),
+        prevent_initial_call=True,
+    )
+    def viewer_download_cleaned_swc(n, df_records, filename):
+        if not df_records:
+            return dash.no_update
+        df = pd.DataFrame(df_records)
+        content = make_swc_plus_bytes_from_df(df, filename)
+        base = os.path.splitext(filename or "viewer")[0]
+        out_name = f"{base}_clean.swc"
+
+        def writer(f):
+            f.write(content)
+
+        return dcc.send_bytes(writer, out_name)
+
+    @app.callback(
+        Output("download-viewer-clean-log", "data"),
+        Input("btn-dl-viewer-clean-log", "n_clicks"),
+        State("table-viewer-clean-log", "data"),
+        State("store-viewer-filename", "data"),
+        prevent_initial_call=True,
+    )
+    def viewer_download_clean_log(n, table_rows, filename):
+        if not table_rows:
+            return dash.no_update
+        df = pd.DataFrame(table_rows)
+        csv_text = df.to_csv(index=False)
+        base = os.path.splitext(filename or "viewer_clean_log")[0]
+        out_name = f"{base}_clean_log.csv"
+        return dcc.send_string(csv_text, out_name)
 
     # =====================================================================
     #                          VALIDATION PAGE

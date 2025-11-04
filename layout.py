@@ -331,6 +331,57 @@ def _viewer_tab():
                 style={"maxWidth": 940},
             ),
 
+            html.Hr(),
+            html.H4("Clean Radii"),
+            html.P("Pick a mode. Uses per-type values from controls above for each selected Type."),
+            html.Div(
+                [
+                    dcc.RadioItems(
+                        id="viewer-clean-mode",
+                        options=[
+                            {"label": " By percentage (Top-K%)", "value": "percent"},
+                            {"label": " By absolute value", "value": "absolute"},
+                        ],
+                        value="percent",
+                        inline=True,
+                        style={"marginRight": 18},
+                    ),
+                    dcc.Input(
+                        id="viewer-clean-value",
+                        type="number",
+                        placeholder="Uses per-type values above",
+                        disabled=True,
+                        style={"width": 240, "marginLeft": 8, "marginRight": 12},
+                    ),
+                    html.Button("Clean radii", id="btn-viewer-clean"),
+                    html.Span(id="viewer-clean-msg", style={"marginLeft": 10, "color": "#0a7"}),
+                ],
+                style={"display": "flex", "alignItems": "center", "flexWrap": "wrap", "gap": "10px", "marginBottom": 10},
+            ),
+
+            dash_table.DataTable(
+                id="table-viewer-clean-log",
+                columns=[
+                    {"name": "node_id", "id": "node_id"},
+                    {"name": "label", "id": "label"},
+                    {"name": "old_radius", "id": "old_radius"},
+                    {"name": "new_radius", "id": "new_radius"},
+                    {"name": "mode", "id": "mode"},
+                    {"name": "cutoff", "id": "cutoff"},
+                ],
+                data=[],
+                page_size=10,
+                style_table={"overflowX": "auto"},
+                style_cell={"fontSize": 14},
+            ),
+            html.Div(
+                [
+                    html.Button("Download cleaned SWC", id="btn-dl-viewer-clean-swc"),
+                    html.Button("Download clean log", id="btn-dl-viewer-clean-log", style={"marginLeft": 10}),
+                ],
+                style={"marginTop": 10, "marginBottom": 10},
+            ),
+
             # Stores
             dcc.Store(
                 id="viewer-topk-store",
@@ -344,6 +395,9 @@ def _viewer_tab():
             ),
 
             dcc.Store(id="store-viewer-df"),
+            dcc.Store(id="store-viewer-filename"),
+            dcc.Download(id="download-viewer-clean-swc"),
+            dcc.Download(id="download-viewer-clean-log"),
         ]
     )
 
