@@ -13,17 +13,27 @@ def _dendrogram_tab():
                 "Download the edited SWC and a change log."
             ),
 
-            # Upload first
-            dcc.Upload(
-                id="upload-edit", multiple=False,
-                children=html.Div(["Drag & drop or ", html.A("select an SWC file")]),
+            html.Div(
+                [
+                    html.Span("File source: "),
+                    html.Span(
+                        "Upload on the Format Validation tab to load and share an SWC file.",
+                        style={"fontWeight": 600},
+                    ),
+                ],
                 style={
-                    "height": "64px", "lineHeight": "64px",
-                    "border": "2px dashed #999", "borderRadius": 6,
-                    "textAlign": "center", "marginBottom": 10,
+                    "padding": "12px",
+                    "border": "1px solid #ddd",
+                    "borderRadius": 6,
+                    "backgroundColor": "#f7f7f7",
+                    "marginBottom": 10,
                 },
             ),
-            html.Div(id="edit-file-info", style={"color": "#555", "marginBottom": 8}),
+            html.Div(
+                id="edit-file-info",
+                children="Upload on the Format Validation tab to load a shared SWC.",
+                style={"color": "#555", "marginBottom": 8},
+            ),
 
             # 3D plot (under upload) and larger
             html.H4("3D Structure (edges only, color-coded by type)", style={"marginTop": 6}),
@@ -240,16 +250,27 @@ def _viewer_tab():
                 "The effective cutoff is max(percentile cutoff, absolute cutoff) — must pass both."
             ),
 
-            dcc.Upload(
-                id="upload-viewer", multiple=False,
-                children=html.Div(["Drag & drop or ", html.A("select an SWC file to view")]),
+            html.Div(
+                [
+                    html.Span("File source: "),
+                    html.Span(
+                        "Upload on the Format Validation tab. All tabs share the same working file.",
+                        style={"fontWeight": 600},
+                    ),
+                ],
                 style={
-                    "height": "64px", "lineHeight": "64px",
-                    "border": "2px dashed #999", "borderRadius": 6,
-                    "textAlign": "center", "marginBottom": 10,
+                    "padding": "12px",
+                    "border": "1px solid #ddd",
+                    "borderRadius": 6,
+                    "backgroundColor": "#f7f7f7",
+                    "marginBottom": 10,
                 },
             ),
-            html.Div(id="viewer-file-info", style={"color": "#555", "marginBottom": 12}),
+            html.Div(
+                id="viewer-file-info",
+                children="Upload on the Format Validation tab to load a shared SWC.",
+                style={"color": "#555", "marginBottom": 12},
+            ),
 
             html.Div(
                 [
@@ -394,8 +415,6 @@ def _viewer_tab():
                       "basal dendrite": None, "apical dendrite": None, "custom": None},
             ),
 
-            dcc.Store(id="store-viewer-df"),
-            dcc.Store(id="store-viewer-filename"),
             dcc.Download(id="download-viewer-clean-swc"),
             dcc.Download(id="download-viewer-clean-log"),
         ]
@@ -415,7 +434,22 @@ def build_layout():
                     dcc.Tab(label="2D/3D Viewer", value="tab-viewer"),
                 ],
             ),
-            html.Div(id="tab-content"),
+            html.Div(
+                id="tab-content",
+                children=[
+                    html.Div(_dendrogram_tab(), id="tab-pane-dendro"),
+                    html.Div(
+                        _validation_tab(),
+                        id="tab-pane-validate",
+                        style={"display": "none"},
+                    ),
+                    html.Div(
+                        _viewer_tab(),
+                        id="tab-pane-viewer",
+                        style={"display": "none"},
+                    ),
+                ],
+            ),
 
             # global stores/downloads shared by the Dendrogram page
             dcc.Store(id="store-working-df"),

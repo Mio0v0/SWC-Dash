@@ -218,52 +218,72 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def _validation_rows_from_df(df: pd.DataFrame) -> list[dict]:
+    """
+    Run the NeuroM validation checks against the provided DataFrame
+    representation of the current SWC.
+    """
+    swc_bytes = write_swc_to_bytes_preserve_tokens(df)
+    swc_text = swc_bytes.decode("utf-8", errors="ignore")
+    _, _sanitized_bytes, table_rows = run_format_validation_from_text(swc_text)
+    return table_rows
+
+
 
 def register_callbacks(app):
 
-    # ---------------- Tabs renderer ----------------
+    # ---------------- Tabs visibility ----------------
     @app.callback(
-        Output("tab-content", "children"),
+        Output("tab-pane-dendro", "style"),
+        Output("tab-pane-validate", "style"),
+        Output("tab-pane-viewer", "style"),
         Input("tabs", "value"),
         prevent_initial_call=False,
     )
-    def render_tab(which):
-        if which == "tab-dendro":
-            return _dendrogram_tab()
-        elif which == "tab-validate":
-            return _validation_tab()
-        elif which == "tab-viewer":
-            return _viewer_tab()
-        return _dendrogram_tab()
+    def set_tab_visibility(which):
+        show = {"display": "block"}
+        hide = {"display": "none"}
+        if which == "tab-validate":
+            return hide, show, hide
+        if which == "tab-viewer":
+            return hide, hide, show
+        return show, hide, hide
 
-    # ---------------- DENDROGRAM: load file ----------------
+    # ---------------- DENDROGRAM: render from shared store ----------------
     @app.callback(
         Output("edit-file-info", "children"),
-        Output("store-working-df", "data", allow_duplicate=True),
-        Output("fig-dendro", "figure", allow_duplicate=True),
-        Output("fig-dendro-3d", "figure", allow_duplicate=True),   # NEW
-        Output("store-dendro-info", "data", allow_duplicate=True),
-        Output("table-changes", "data", allow_duplicate=True),
-        Output("apply-msg", "children", allow_duplicate=True),
-        Output("store-filename", "data", allow_duplicate=True),
-        Input("upload-edit", "contents"),
-        State("upload-edit", "filename"),
-        prevent_initial_call=True,
+        Output("fig-dendro", "figure"),
+        Output("fig-dendro-3d", "figure"),
+        Output("store-dendro-info", "data"),
+        Input("store-working-df", "data"),
+        State("store-filename", "data"),
+        prevent_initial_call=False,
     )
-    def load_file(contents, filename):
-        if not contents:
-            return "No file.", None, go.Figure(), go.Figure(), None, [], "", None
+    def render_dendrogram(shared_records, filename):
+        if not shared_records:
+            return (
+                "No file loaded. Upload on the Format Validation tab.",
+                go.Figure(),
+                go.Figure(),
+                None,
+            )
         try:
-            text = _decode_uploaded_text(contents)
-            df = parse_swc_text_preserve_tokens(text)
+            df = pd.DataFrame(shared_records)
             if df.empty:
-                return f"Loaded {filename}: 0 rows.", None, go.Figure(), go.Figure(), None, [], "", filename
+                msg = f"Loaded {filename or 'current file'}: 0 rows."
+                return msg, go.Figure(), go.Figure(), None
+
             dendro_fig, info = make_dendrogram_figure(df)
-            fig3d = _make_3d_edges_figure(df)  # NEW
-            msg = f"Loaded {filename} with {len(df)} nodes."
-            return msg, df.to_dict("records"), dendro_fig, fig3d, info, [], "", filename
+            fig3d = _make_3d_edges_figure(df)
+            msg = f"Loaded {filename or 'current file'} with {len(df)} nodes."
+            return msg, dendro_fig, fig3d, info
         except Exception as e:
-            return f"Failed to load: {e}", None, go.Figure(), go.Figure(), None, [], "", filename
+            return (
+                f"Failed to render dendrogram: {e}",
+                go.Figure(),
+                go.Figure(),
+                None,
+            )
 
     # ---------------- DENDROGRAM: click select ----------------
     @app.callback(
@@ -308,6 +328,9 @@ def register_callbacks(app):
         Output("store-dendro-info", "data", allow_duplicate=True),
         Output("selected-type", "children", allow_duplicate=True),
         Output("type-chip", "style", allow_duplicate=True),
+        Output("validate-file-info", "children", allow_duplicate=True),
+        Output("table-validate-results", "data", allow_duplicate=True),
+        Output("store-validate-table", "data", allow_duplicate=True),
         Input("btn-apply", "n_clicks"),
         State("selected-node-id", "children"),
         State("new-type", "value"),
@@ -315,9 +338,10 @@ def register_callbacks(app):
         State("store-working-df", "data"),
         State("store-dendro-info", "data"),
         State("table-changes", "data"),
+        State("store-filename", "data"),
         prevent_initial_call=True,
     )
-    def apply_type_change(n, selected_swc_id, new_type, scope_mode, df_records, info, table):
+    def apply_type_change(n, selected_swc_id, new_type, scope_mode, df_records, info, table, filename):
         base_chip_style = {
             "display": "inline-block", "width": "12px", "height": "12px",
             "borderRadius": "2px", "marginRight": "6px",
@@ -328,6 +352,7 @@ def register_callbacks(app):
             return (
                 dash.no_update, "Upload a file first.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update,
             )
 
         try:
@@ -336,12 +361,14 @@ def register_callbacks(app):
             return (
                 dash.no_update, "Click a branch in the dendrogram first.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update,
             )
 
         if new_type is None or int(new_type) < 0:
             return (
                 dash.no_update, "Enter a valid non-negative SWC type.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update,
             )
 
         df = pd.DataFrame(df_records)
@@ -350,6 +377,7 @@ def register_callbacks(app):
             return (
                 dash.no_update, f"Could not find SWC id {sel_id}.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update,
             )
         v = int(matches[0])
 
@@ -390,8 +418,20 @@ def register_callbacks(app):
         label = label_for_type(new_t)
         chip_style = dict(base_chip_style, backgroundColor=color_for_type(new_t))
 
+        validation_msg = dash.no_update
+        validate_rows = dash.no_update
+        validate_store = dash.no_update
+        try:
+            rows = _validation_rows_from_df(df)
+            validation_msg = f"Validated {filename or 'current file'} • {len(rows)} checks (auto-updated)"
+            validate_rows = rows
+            validate_store = rows
+        except Exception as e:
+            validation_msg = f"Validation failed after edit: {e}"
+
         return (
             df.to_dict("records"), msg, table, 0, dendro_fig, fig3d, info2, f"{label} ({new_t})", chip_style,
+            validation_msg, validate_rows, validate_store,
         )
 
     # ---------------- DENDROGRAM: downloads ----------------
@@ -436,28 +476,23 @@ def register_callbacks(app):
         return dcc.send_string(csv_text, out_name)
 
     # =====================================================================
-    # ---------------- Viewer: load file ----------------
+    # ---------------- Viewer: info --------------------------------------
     @app.callback(
         Output("viewer-file-info", "children"),
-        Output("store-viewer-df", "data", allow_duplicate=True),
-        Output("store-viewer-filename", "data", allow_duplicate=True),
-        Output("table-viewer-clean-log", "data", allow_duplicate=True),
-        Input("upload-viewer", "contents"),
-        State("upload-viewer", "filename"),
-        prevent_initial_call=True,
+        Input("store-working-df", "data"),
+        State("store-filename", "data"),
+        prevent_initial_call=False,
     )
-    def viewer_load(contents, filename):
-        if not contents:
-            return "No file.", None, None, []
+    def viewer_info(shared_records, filename):
+        if not shared_records:
+            return "No file loaded. Upload on the Format Validation tab."
         try:
-            text = _decode_uploaded_text(contents)
-            df = parse_swc_text_preserve_tokens(text)
+            df = pd.DataFrame(shared_records)
             if df.empty:
-                return f"Loaded {filename}: 0 rows.", None, filename, []
-            msg = f"Loaded {filename} with {len(df)} nodes."
-            return msg, df.to_dict("records"), filename, []
+                return f"Loaded {filename or 'current file'}: 0 rows."
+            return f"Loaded {filename or 'current file'} with {len(df)} nodes."
         except Exception as e:
-            return f"Failed to load: {e}", None, filename, []
+            return f"Failed to display viewer info: {e}"
 
 
     # ---------------- Helpers ----------------
@@ -648,21 +683,32 @@ def register_callbacks(app):
 
     # ---------------- Clean Radii ----------------
     @app.callback(
-        Output("store-viewer-df", "data", allow_duplicate=True),
+        Output("store-working-df", "data", allow_duplicate=True),
         Output("table-viewer-clean-log", "data", allow_duplicate=True),
         Output("viewer-clean-msg", "children", allow_duplicate=True),
+        Output("validate-file-info", "children", allow_duplicate=True),
+        Output("table-validate-results", "data", allow_duplicate=True),
+        Output("store-validate-table", "data", allow_duplicate=True),
         Input("btn-viewer-clean", "n_clicks"),
-        State("store-viewer-df", "data"),
+        State("store-working-df", "data"),
         State("viewer-type-select", "value"),
         State("viewer-clean-mode", "value"),
         State("viewer-topk-store", "data"),
         State("viewer-abs-store", "data"),
         State("table-viewer-clean-log", "data"),
+        State("store-filename", "data"),
         prevent_initial_call=True,
     )
-    def viewer_clean(n, df_records, type_selected, mode, topk_store, abs_store, log_rows):
+    def viewer_clean(n, df_records, type_selected, mode, topk_store, abs_store, log_rows, filename):
         if not df_records:
-            return dash.no_update, dash.no_update, "Upload a file first."
+            return (
+                dash.no_update,
+                dash.no_update,
+                "Upload a file first.",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+            )
 
         try:
             df = pd.DataFrame(df_records).copy()
@@ -675,12 +721,26 @@ def register_callbacks(app):
             if "soma" in selected_labels:
                 selected_labels.discard("soma")
             if not selected_labels:
-                return dash.no_update, dash.no_update, "Select at least one Type."
+                return (
+                    dash.no_update,
+                    dash.no_update,
+                    "Select at least one Type.",
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                )
 
             # Prepare tree cache
             cache = build_tree_cache(df)
             if cache.size == 0:
-                return dash.no_update, dash.no_update, "No nodes to clean."
+                return (
+                    dash.no_update,
+                    dash.no_update,
+                    "No nodes to clean.",
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                )
 
             # Build label per node
             labels = np.array([label_for_type(int(t)) for t in df["type"].to_numpy()], dtype=object)
@@ -733,7 +793,14 @@ def register_callbacks(app):
 
             to_clean_idx = np.flatnonzero(to_clean_mask)
             if to_clean_idx.size == 0:
-                return dash.no_update, log_rows or [], "No nodes met the per-type cutoffs."
+                return (
+                    dash.no_update,
+                    log_rows or [],
+                    "No nodes met the per-type cutoffs.",
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                )
             to_clean_lbl = labels[to_clean_idx].tolist()
 
             # Pre-compute per-type fallback means
@@ -823,7 +890,14 @@ def register_callbacks(app):
                 })
 
             if not changes:
-                return dash.no_update, log_rows or [], "No eligible neighbors to average."
+                return (
+                    dash.no_update,
+                    log_rows or [],
+                    "No eligible neighbors to average.",
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                )
 
             # Write back radii (+ keep token string in sync for saving)
             df.loc[:, "radius"] = new_radii
@@ -840,15 +914,33 @@ def register_callbacks(app):
             new_log = (changes + list(log_rows or []))
 
             msg = f"Cleaned {len(changes)} node(s). Mode: {'Top-K%' if mode=='percent' else 'Absolute'}."
-            return df.to_dict("records"), new_log, msg
+            validation_msg = dash.no_update
+            validate_rows = dash.no_update
+            validate_store = dash.no_update
+            try:
+                rows = _validation_rows_from_df(df)
+                validation_msg = f"Validated {filename or 'current file'} • {len(rows)} checks (auto-updated)"
+                validate_rows = rows
+                validate_store = rows
+            except Exception as e:
+                validation_msg = f"Validation failed after cleaning: {e}"
+
+            return df.to_dict("records"), new_log, msg, validation_msg, validate_rows, validate_store
         except Exception as e:
-            return dash.no_update, dash.no_update, f"Clean failed: {e}"
+            return (
+                dash.no_update,
+                dash.no_update,
+                f"Clean failed: {e}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+            )
 
     # ---------------- Draw figures (edges unfiltered; overlay uses MAX rule) ----------------
     @app.callback(
         Output("fig-view-2d", "figure"),
         Output("fig-view-3d", "figure"),
-        Input("store-viewer-df", "data"),
+        Input("store-working-df", "data"),
         Input("viewer-2d-view", "value"),
         Input("viewer-type-select", "value"),
         Input("viewer-performance", "value"),
@@ -1040,8 +1132,8 @@ def register_callbacks(app):
     @app.callback(
         Output("download-viewer-clean-swc", "data"),
         Input("btn-dl-viewer-clean-swc", "n_clicks"),
-        State("store-viewer-df", "data"),
-        State("store-viewer-filename", "data"),
+        State("store-working-df", "data"),
+        State("store-filename", "data"),
         prevent_initial_call=True,
     )
     def viewer_download_cleaned_swc(n, df_records, filename):
@@ -1061,7 +1153,7 @@ def register_callbacks(app):
         Output("download-viewer-clean-log", "data"),
         Input("btn-dl-viewer-clean-log", "n_clicks"),
         State("table-viewer-clean-log", "data"),
-        State("store-viewer-filename", "data"),
+        State("store-filename", "data"),
         prevent_initial_call=True,
     )
     def viewer_download_clean_log(n, table_rows, filename):
@@ -1077,26 +1169,81 @@ def register_callbacks(app):
     #                          VALIDATION PAGE
     # =====================================================================
     @app.callback(
-        Output("validate-file-info", "children"),
+        Output("validate-file-info", "children", allow_duplicate=True),
         Output("table-validate-results", "data", allow_duplicate=True),
         Output("store-validate-table", "data", allow_duplicate=True),
+        Output("store-working-df", "data", allow_duplicate=True),
+        Output("store-filename", "data", allow_duplicate=True),
+        Output("table-changes", "data", allow_duplicate=True),
+        Output("table-changes", "page_current", allow_duplicate=True),
+        Output("apply-msg", "children", allow_duplicate=True),
+        Output("table-viewer-clean-log", "data", allow_duplicate=True),
+        Output("viewer-clean-msg", "children", allow_duplicate=True),
         Input("upload-validate", "contents"),
         State("upload-validate", "filename"),
         prevent_initial_call=True,
     )
-    def run_validation(contents, filename):
+    def run_validation_upload(contents, filename):
         if not contents:
-            return "No file.", [], None
+            return (
+                "No file.",
+                [],
+                None,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+            )
         try:
-            header, b64 = contents.split(",", 1)
-            text = base64.b64decode(b64).decode("utf-8", errors="ignore")
+            text = _decode_uploaded_text(contents)
+            df = parse_swc_text_preserve_tokens(text)
+            rows = []
+            try:
+                _, _sanitized_bytes, rows = run_format_validation_from_text(text)
+            except Exception as e:
+                return (
+                    f"Validation failed: {e}",
+                    [],
+                    None,
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                    dash.no_update,
+                )
 
-            _, _sanitized_bytes, table_rows = run_format_validation_from_text(text)
-            msg = f"Validated {filename} • {len(table_rows)} checks"
+            msg = f"Validated {filename or 'uploaded file'} • {len(rows)} checks"
 
-            return (msg, table_rows, table_rows)
+            return (
+                msg,
+                rows,
+                rows,
+                df.to_dict("records") if not df.empty else [],
+                filename,
+                [],
+                0,
+                "",
+                [],
+                "",
+            )
         except Exception as e:
-            return f"Validation failed: {e}", [], None
+            return (
+                f"Validation failed: {e}",
+                [],
+                None,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+            )
 
     @app.callback(
         Output("download-validate-json", "data"),
