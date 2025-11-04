@@ -187,7 +187,8 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
                 legendgroup="soma",
                 name="soma",
                 showlegend=True,
-                visible="legendonly",
+                # Keep legend colored as a line without changing the plot
+                visible=True,
             )
         )
 
@@ -517,39 +518,35 @@ def register_callbacks(app):
     @app.callback(
         # numeric inputs
         Output("viewer-topk-undefined-input", "value"),
-        Output("viewer-topk-soma-input", "value"),
         Output("viewer-topk-axon-input", "value"),
         Output("viewer-topk-basal-input", "value"),
         Output("viewer-topk-apical-input", "value"),
         Output("viewer-topk-custom-input", "value"),
         # sliders
         Output("viewer-topk-undefined", "value"),
-        Output("viewer-topk-soma", "value"),
         Output("viewer-topk-axon", "value"),
         Output("viewer-topk-basal", "value"),
         Output("viewer-topk-apical", "value"),
         Output("viewer-topk-custom", "value"),
         # inputs
         Input("viewer-topk-undefined", "value"),
-        Input("viewer-topk-soma", "value"),
         Input("viewer-topk-axon", "value"),
         Input("viewer-topk-basal", "value"),
         Input("viewer-topk-apical", "value"),
         Input("viewer-topk-custom", "value"),
         Input("viewer-topk-undefined-input", "value"),
-        Input("viewer-topk-soma-input", "value"),
         Input("viewer-topk-axon-input", "value"),
         Input("viewer-topk-basal-input", "value"),
         Input("viewer-topk-apical-input", "value"),
         Input("viewer-topk-custom-input", "value"),
         prevent_initial_call=True,
     )
-    def sync_slider_numeric(s_undef, s_soma, s_axon, s_basal, s_apical, s_custom,
-                            n_undef, n_soma, n_axon, n_basal, n_apical, n_custom):
+    def sync_slider_numeric(s_undef, s_axon, s_basal, s_apical, s_custom,
+                            n_undef, n_axon, n_basal, n_apical, n_custom):
         ctx = dash.callback_context
         no = dash.no_update
-        out_numeric = [no]*6
-        out_sliders = [no]*6
+        out_numeric = [no]*5
+        out_sliders = [no]*5
         if not ctx.triggered:
             return (*out_numeric, *out_sliders)
 
@@ -557,19 +554,17 @@ def register_callbacks(app):
 
         slider_map = {
             "viewer-topk-undefined": (0, s_undef),
-            "viewer-topk-soma": (1, s_soma),
-            "viewer-topk-axon": (2, s_axon),
-            "viewer-topk-basal": (3, s_basal),
-            "viewer-topk-apical": (4, s_apical),
-            "viewer-topk-custom": (5, s_custom),
+            "viewer-topk-axon": (1, s_axon),
+            "viewer-topk-basal": (2, s_basal),
+            "viewer-topk-apical": (3, s_apical),
+            "viewer-topk-custom": (4, s_custom),
         }
         numeric_map = {
             "viewer-topk-undefined-input": (0, n_undef),
-            "viewer-topk-soma-input": (1, n_soma),
-            "viewer-topk-axon-input": (2, n_axon),
-            "viewer-topk-basal-input": (3, n_basal),
-            "viewer-topk-apical-input": (4, n_apical),
-            "viewer-topk-custom-input": (5, n_custom),
+            "viewer-topk-axon-input": (1, n_axon),
+            "viewer-topk-basal-input": (2, n_basal),
+            "viewer-topk-apical-input": (3, n_apical),
+            "viewer-topk-custom-input": (4, n_custom),
         }
 
         if src in slider_map:
@@ -591,13 +586,11 @@ def register_callbacks(app):
     @app.callback(
         Output("viewer-topk-store", "data"),
         Input("viewer-topk-undefined", "value"),
-        Input("viewer-topk-soma", "value"),
         Input("viewer-topk-axon", "value"),
         Input("viewer-topk-basal", "value"),
         Input("viewer-topk-apical", "value"),
         Input("viewer-topk-custom", "value"),
         Input("viewer-topk-undefined-input", "value"),
-        Input("viewer-topk-soma-input", "value"),
         Input("viewer-topk-axon-input", "value"),
         Input("viewer-topk-basal-input", "value"),
         Input("viewer-topk-apical-input", "value"),
@@ -606,8 +599,8 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def any_control_updates_store(
-            s_undef, s_soma, s_axon, s_basal, s_apical, s_custom,
-            n_undef, n_soma, n_axon, n_basal, n_apical, n_custom,
+            s_undef, s_axon, s_basal, s_apical, s_custom,
+            n_undef, n_axon, n_basal, n_apical, n_custom,
             store,
     ):
         ctx = dash.callback_context
@@ -619,13 +612,11 @@ def register_callbacks(app):
 
         mapping = {
             "viewer-topk-undefined": ("undefined", s_undef),
-            "viewer-topk-soma": ("soma", s_soma),
             "viewer-topk-axon": ("axon", s_axon),
             "viewer-topk-basal": ("basal dendrite", s_basal),
             "viewer-topk-apical": ("apical dendrite", s_apical),
             "viewer-topk-custom": ("custom", s_custom),
             "viewer-topk-undefined-input": ("undefined", n_undef),
-            "viewer-topk-soma-input": ("soma", n_soma),
             "viewer-topk-axon-input": ("axon", n_axon),
             "viewer-topk-basal-input": ("basal dendrite", n_basal),
             "viewer-topk-apical-input": ("apical dendrite", n_apical),
@@ -646,7 +637,6 @@ def register_callbacks(app):
     @app.callback(
         Output("viewer-abs-store", "data"),
         Input("viewer-abs-undefined", "value"),
-        Input("viewer-abs-soma", "value"),
         Input("viewer-abs-axon", "value"),
         Input("viewer-abs-basal", "value"),
         Input("viewer-abs-apical", "value"),
@@ -654,7 +644,7 @@ def register_callbacks(app):
         State("viewer-abs-store", "data"),
         prevent_initial_call=True,
     )
-    def abs_inputs_to_store(a_undef, a_soma, a_axon, a_basal, a_apical, a_custom, store):
+    def abs_inputs_to_store(a_undef, a_axon, a_basal, a_apical, a_custom, store):
         ctx = dash.callback_context
         if not ctx.triggered:
             return dash.no_update
@@ -667,7 +657,6 @@ def register_callbacks(app):
 
         mapping = {
             "viewer-abs-undefined": ("undefined", a_undef),
-            "viewer-abs-soma": ("soma", a_soma),
             "viewer-abs-axon": ("axon", a_axon),
             "viewer-abs-basal": ("basal dendrite", a_basal),
             "viewer-abs-apical": ("apical dendrite", a_apical),
@@ -1018,11 +1007,19 @@ def register_callbacks(app):
             abs_cut = 0.0 if (abs_cut is None) else float(abs_cut)
             eff_cut_by_label[lbl] = max(pct_cut, abs_cut)
 
+        # Precompute if any edges belong to soma label
+        soma_has_edges = bool(np.any(L[e_v] == "soma"))
+
         # ---- 2D base edges (UNFILTERED — only hide_thin affects visibility)
         traces2d, legend2d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
             mask_lbl = (L[e_v] == lbl)
             if not np.any(mask_lbl):
+                # For soma with no edges, if we will add a dot later, skip the grey legend-only placeholder.
+                if lbl == "soma":
+                    # We decide whether to add a legend placeholder after we know if a dot will be added.
+                    # Defer: skip placeholder; the soma dot will provide an active legend entry when present.
+                    continue
                 traces2d.append(go.Scattergl(
                     x=[None], y=[None], mode="lines",
                     line=dict(width=THIN_2D, color=color),
@@ -1053,9 +1050,11 @@ def register_callbacks(app):
                     showlegend=True, visible="legendonly",
                 ))
 
-        # ---- 2D overlay dots (filtered by MAX rule)
+        # ---- 2D overlay dots (filtered by MAX rule) excluding soma
         selected_labels = set(type_selected or [])
         for lbl, color in DEFAULT_COLORS.items():
+            if lbl == "soma":
+                continue
             if lbl not in selected_labels:
                 continue
 
@@ -1079,11 +1078,50 @@ def register_callbacks(app):
                 name=f"{lbl} (overlay: max % & abs)", legendgroup=f"{lbl}-overlay", showlegend=False,
             ))
 
+        # ---- Soma dot (always show first row if soma)
+        if len(df) > 0:
+            try:
+                first_type = int(df.iloc[0]["type"])
+                is_soma_first = (label_for_type(first_type) == "soma")
+            except Exception:
+                is_soma_first = False
+            if is_soma_first:
+                if view == "xz":
+                    sx, sy = float(df.iloc[0]["x"]), float(df.iloc[0]["z"])
+                elif view == "yz":
+                    sx, sy = float(df.iloc[0]["y"]), float(df.iloc[0]["z"])
+                else:
+                    sx, sy = float(df.iloc[0]["x"]), float(df.iloc[0]["y"])
+                sr = float(pd.to_numeric(df.iloc[0]["radius"], errors="coerce") or 0.0)
+                sz = max(DOT_MIN, min(DOT_MAX, DOT_SCALE * sr))
+                traces2d.append(
+                    go.Scatter(
+                        x=[sx], y=[sy], mode="markers",
+                        marker=dict(size=sz, color=DEFAULT_COLORS.get("soma", "#d62728"),
+                                    line=dict(color="white", width=1.0), opacity=0.98),
+                        hovertemplate=f"soma • radius={sr:.4f}<extra></extra>",
+                        name="soma", legendgroup="soma",
+                        # Keep dot out of legend; we'll add a line legend entry instead when needed.
+                        showlegend=False,
+                    )
+                )
+                # If soma has no edges, add a line-only legend entry so legend shows a line, not a dot.
+                if not soma_has_edges:
+                    traces2d.append(
+                        go.Scattergl(
+                            x=[None], y=[None], mode="lines",
+                            line=dict(width=THIN_2D, color=DEFAULT_COLORS.get("soma", "#d62728")),
+                            hoverinfo="skip", name="soma", legendgroup="soma",
+                            showlegend=True, visible=True,
+                        )
+                    )
+
         fig2d = go.Figure(traces2d)
         fig2d.update_layout(
             xaxis_title=xlab, yaxis_title=ylab, template="plotly_white",
             height=600, margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Type",
             hovermode="closest", hoverdistance=15,
+            showlegend=True,
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
 

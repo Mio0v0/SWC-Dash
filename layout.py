@@ -249,6 +249,11 @@ def _viewer_tab():
                 "Per-type Top-K% (0.01–10) and per-type absolute radius control the same overlay. "
                 "The effective cutoff is max(percentile cutoff, absolute cutoff) — must pass both."
             ),
+            html.P(
+                "Note: The plot is drawn from edges. If the first SWC row is a soma that doesn't form an edge, "
+                "a soma dot is added automatically so it is visible; the legend shows soma with its color.",
+                style={"color": "#555"},
+            ),
 
             html.Div(
                 [
@@ -336,7 +341,6 @@ def _viewer_tab():
             html.Div(
                 [
                     topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", "viewer-abs-undefined", 10.0),
-                    topk_row("Soma",            "viewer-topk-soma",      "viewer-topk-soma-input",      "viewer-abs-soma",      10.0),
                     topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      "viewer-abs-axon",      10.0),
                     topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     "viewer-abs-basal",     10.0),
                     topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    "viewer-abs-apical",    10.0),
