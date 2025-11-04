@@ -187,7 +187,8 @@ def _viewer_tab():
         label_txt: str,
         slider_id: str, input_id: str,
         abs_input_id: str,
-        default_val: float = 10.0
+        avg_id: str,
+        default_val: float = 10.0,
     ):
         """
         Per-type controls:
@@ -216,6 +217,7 @@ def _viewer_tab():
                             style={"marginLeft": 10, "width": 120},
                         ),
                         html.Span(" Top-K %", style={"marginLeft": 6, "color": "#666"}),
+                        html.Span(id=avg_id, children=" Avg: -", style={"marginLeft": 14, "color": "#444"}),
                     ],
                     style={"display": "flex", "alignItems": "center"},
                 ),
@@ -327,11 +329,11 @@ def _viewer_tab():
             html.P("Examples: K=10 → top 10% • K=0.50 → top 0.5% • Absolute ≥ 2.5 → radii ≥ 2.5 (must pass both if set)"),
             html.Div(
                 [
-                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", "viewer-abs-undefined", 10.0),
-                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      "viewer-abs-axon",      10.0),
-                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     "viewer-abs-basal",     10.0),
-                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    "viewer-abs-apical",    10.0),
-                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    "viewer-abs-custom",    10.0),
+                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", "viewer-abs-undefined", "viewer-avg-undefined", 10.0),
+                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      "viewer-abs-axon",      "viewer-avg-axon",      10.0),
+                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     "viewer-abs-basal",     "viewer-avg-basal",     10.0),
+                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    "viewer-abs-apical",    "viewer-avg-apical",    10.0),
+                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    "viewer-abs-custom",    "viewer-avg-custom",    10.0),
                 ],
                 style={"maxWidth": 940},
             ),

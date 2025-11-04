@@ -495,6 +495,41 @@ def register_callbacks(app):
         except Exception as e:
             return f"Failed to display viewer info: {e}"
 
+    # ---------------- Per-type average radii (Radii cleaner) ----------------
+    @app.callback(
+        Output("viewer-avg-undefined", "children"),
+        Output("viewer-avg-axon", "children"),
+        Output("viewer-avg-basal", "children"),
+        Output("viewer-avg-apical", "children"),
+        Output("viewer-avg-custom", "children"),
+        Input("store-working-df", "data"),
+        prevent_initial_call=False,
+    )
+    def viewer_avg_labels(df_records):
+        def fmt(v):
+            return f" Avg: {v:.4f}" if v is not None and np.isfinite(v) else " Avg: -"
+        if not df_records:
+            return fmt(None), fmt(None), fmt(None), fmt(None), fmt(None)
+        try:
+            df = pd.DataFrame(df_records)
+            if df.empty:
+                return fmt(None), fmt(None), fmt(None), fmt(None), fmt(None)
+            # Ensure numeric
+            df["type"] = pd.to_numeric(df["type"], errors="coerce").fillna(0).astype(int)
+            df["radius"] = pd.to_numeric(df["radius"], errors="coerce")
+            # Map type -> label and compute means
+            df["label"] = [label_for_type(int(t)) for t in df["type"].tolist()]
+            means = df.groupby("label")["radius"].mean(numeric_only=True).to_dict()
+            return (
+                fmt(means.get("undefined")),
+                fmt(means.get("axon")),
+                fmt(means.get("basal dendrite")),
+                fmt(means.get("apical dendrite")),
+                fmt(means.get("custom")),
+            )
+        except Exception:
+            return fmt(None), fmt(None), fmt(None), fmt(None), fmt(None)
+
 
     # ---------------- Helpers ----------------
     def _clamp_percent(v):
