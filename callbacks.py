@@ -939,7 +939,6 @@ def register_callbacks(app):
     # ---------------- Draw figures (edges unfiltered; overlay uses MAX rule) ----------------
     @app.callback(
         Output("fig-view-2d", "figure"),
-        Output("fig-view-3d", "figure"),
         Input("store-working-df", "data"),
         Input("viewer-2d-view", "value"),
         Input("viewer-type-select", "value"),
@@ -950,7 +949,7 @@ def register_callbacks(app):
     )
     def viewer_draw(df_records, view, type_selected, perf_flags, topk_store, abs_store):
         if not df_records:
-            return go.Figure(), go.Figure()
+            return go.Figure()
 
         hide_thin = "hide_thin" in (perf_flags or [])
         THIN_2D, THIN_3D = 0.8, 1.6
@@ -992,8 +991,7 @@ def register_callbacks(app):
         tree = build_tree_cache(df)
         if tree.child_indices.size == 0:
             fig2d = go.Figure(layout=dict(template="plotly_white", xaxis_title=xlab, yaxis_title=ylab))
-            fig3d = go.Figure(layout=dict(template="plotly_white", scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z")))
-            return fig2d, fig3d
+            return fig2d
 
         e_u = np.repeat(np.arange(tree.size, dtype=np.int32), np.diff(tree.child_offsets))
         e_v = tree.child_indices.astype(np.int32, copy=False)
@@ -1089,42 +1087,7 @@ def register_callbacks(app):
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
 
-        # ---- 3D base (edges only, unfiltered)
-        traces3d, legend3d = [], set()
-        for lbl, color in DEFAULT_COLORS.items():
-            lv = (L[e_v] == lbl)
-            if not np.any(lv):
-                traces3d.append(go.Scatter3d(
-                    x=[None], y=[None], z=[None], mode="lines",
-                    line=dict(width=THIN_3D, color=color),
-                    hoverinfo="skip", name=lbl, legendgroup=lbl,
-                    showlegend=True, visible="legendonly",
-                ))
-                continue
-            uu = e_u[lv]; vv = e_v[lv]
-            x0, y0, z0 = coords_x[uu], coords_y[uu], coords_z[uu]
-            x1, y1, z1 = coords_x[vv], coords_y[vv], coords_z[vv]
-            m = uu.size
-            X3 = np.empty(m * 3, dtype=np.float32); Y3 = np.empty(m * 3, dtype=np.float32); Z3 = np.empty(m * 3, dtype=np.float32)
-            X3[0::3] = x0; X3[1::3] = x1; X3[2::3] = np.nan
-            Y3[0::3] = y0; Y3[1::3] = y1; Y3[2::3] = np.nan
-            Z3[0::3] = z0; Z3[1::3] = z1; Z3[2::3] = np.nan
-
-            traces3d.append(go.Scatter3d(
-                x=X3, y=Y3, z=Z3, mode="lines",
-                line=dict(width=THIN_3D, color=color),
-                hoverinfo="skip", name=lbl, legendgroup=lbl, showlegend=(lbl not in legend3d),
-            ))
-            legend3d.add(lbl)
-
-        fig3d = go.Figure(traces3d)
-        fig3d.update_layout(
-            template="plotly_white",
-            scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z", aspectmode="data"),
-            height=600, margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Type",
-        )
-
-        return fig2d, fig3d
+        return fig2d
 
 
 

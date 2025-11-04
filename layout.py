@@ -244,7 +244,7 @@ def _viewer_tab():
 
     return html.Div(
         [
-            html.H2("2D / 3D Viewer", style={"marginBottom": 6}),
+            html.H2("Radii cleaner", style={"marginBottom": 6}),
             html.P(
                 "Per-type Top-K% (0.01–10) and per-type absolute radius control the same overlay. "
                 "The effective cutoff is max(percentile cutoff, absolute cutoff) — must pass both."
@@ -307,13 +307,6 @@ def _viewer_tab():
                                 style={"marginBottom": 8},
                             ),
                             dcc.Graph(id="fig-view-2d", style={"height": 600}),
-                        ],
-                        style={"flex": 1, "minWidth": 0, "marginRight": 12},
-                    ),
-                    html.Div(
-                        [
-                            html.H4("3D View"),
-                            dcc.Graph(id="fig-view-3d", style={"height": 600}),
                         ],
                         style={"flex": 1, "minWidth": 0},
                     ),
@@ -427,27 +420,22 @@ def build_layout():
         [
             dcc.Tabs(
                 id="tabs",
-                value="tab-dendro",
+                value="tab-validate",
                 children=[
-                    dcc.Tab(label="Dendrogram Editor", value="tab-dendro"),
                     dcc.Tab(label="Format Validation", value="tab-validate"),
-                    dcc.Tab(label="2D/3D Viewer", value="tab-viewer"),
+                    dcc.Tab(label="Dendrogram Editor", value="tab-dendro"),
+                    dcc.Tab(label="Radii cleaner", value="tab-viewer"),
                 ],
             ),
             html.Div(
                 id="tab-content",
                 children=[
-                    html.Div(_dendrogram_tab(), id="tab-pane-dendro"),
                     html.Div(
                         _validation_tab(),
                         id="tab-pane-validate",
-                        style={"display": "none"},
                     ),
-                    html.Div(
-                        _viewer_tab(),
-                        id="tab-pane-viewer",
-                        style={"display": "none"},
-                    ),
+                    html.Div(_dendrogram_tab(), id="tab-pane-dendro", style={"display": "none"}),
+                    html.Div(_viewer_tab(), id="tab-pane-viewer", style={"display": "none"}),
                 ],
             ),
 
