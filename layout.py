@@ -13,21 +13,39 @@ def _dendrogram_tab():
                 "Download the edited SWC and a change log."
             ),
 
-            # Upload first
-            dcc.Upload(
-                id="upload-edit", multiple=False,
-                children=html.Div(["Drag & drop or ", html.A("select an SWC file")]),
+            html.Div(
+                [
+                    html.Span("File source: "),
+                    html.Span(
+                        "Upload on the Format Validation tab to load and share an SWC file.",
+                        style={"fontWeight": 600},
+                    ),
+                ],
                 style={
-                    "height": "64px", "lineHeight": "64px",
-                    "border": "2px dashed #999", "borderRadius": 6,
-                    "textAlign": "center", "marginBottom": 10,
+                    "padding": "12px",
+                    "border": "1px solid #ddd",
+                    "borderRadius": 6,
+                    "backgroundColor": "#f7f7f7",
+                    "marginBottom": 10,
                 },
             ),
-            html.Div(id="edit-file-info", style={"color": "#555", "marginBottom": 8}),
+            html.Div(
+                id="edit-file-info",
+                children="Upload on the Format Validation tab to load a shared SWC.",
+                style={"color": "#555", "marginBottom": 8},
+            ),
 
             # 3D plot (under upload) and larger
             html.H4("3D Structure (edges only, color-coded by type)", style={"marginTop": 6}),
-            dcc.Graph(id="fig-dendro-3d", style={"height": 900, "marginBottom": 5}),  # <-- taller box
+            dcc.Graph(
+                id="fig-dendro-3d",
+                style={
+                    "height": 520,
+                    "maxWidth": "640px",
+                    "width": "100%",
+                    "margin": "0 auto 8px",
+                },
+            ),
 
             # Dendrogram editor
             html.Div(
@@ -75,9 +93,19 @@ def _dendrogram_tab():
                                         min=0, step=1,
                                         style={"width": 240, "marginRight": 8},
                                     ),
-                                    html.Button("Apply to subtree", id="btn-apply"),
+                                    html.Button("Apply type change", id="btn-apply"),
                                 ],
                                 style={"marginTop": 8},
+                            ),
+                            dcc.RadioItems(
+                                id="apply-scope",
+                                options=[
+                                    {"label": "Entire subtree", "value": "subtree"},
+                                    {"label": "Selected node only", "value": "node"},
+                                ],
+                                value="subtree",
+                                inline=True,
+                                style={"marginTop": 6},
                             ),
                             html.Div(id="apply-msg", style={"color": "#0a7", "marginTop": 6}),
                         ],
@@ -116,10 +144,6 @@ def _validation_tab():
     return html.Div(
         [
             html.H2("SWC Format Validation", style={"marginBottom": 6}),
-            html.P(
-                "Drop an SWC file to run NeuroM checks. The file is sanitized (type=0 or >7 → 7) before checks."
-            ),
-
             dcc.Upload(
                 id="upload-validate", multiple=False,
                 children=html.Div(["Drag & drop or ", html.A("select an SWC file to validate")]),
@@ -156,44 +180,91 @@ def _validation_tab():
     )
 
 
+from dash import html, dcc
+
 def _viewer_tab():
-    def topk_row(label_txt: str, slider_id: str, input_id: str, default_val: float = 10.0):
+    def topk_row(
+        label_txt: str,
+        slider_id: str, input_id: str,
+        abs_input_id: str,
+        avg_id: str,
+        default_val: float = 10.0,
+    ):
+        """
+        Per-type controls:
+          - Top-K% slider + numeric input (K in [0.01, 10])
+          - Absolute radius numeric input (>= 0)
+        """
         return html.Div(
             [
                 html.Label(label_txt, style={"display": "block", "marginBottom": 6}),
-                dcc.Slider(
-                    id=slider_id,
-                    min=0.01, max=10.0, step=0.01, value=float(default_val),
-                    marks=None,
-                    tooltip={"placement": "bottom", "always_visible": False},
-                    updatemode="mouseup",
+                # K% controls
+                html.Div(
+                    [
+                        html.Div(
+                            dcc.Slider(
+                                id=slider_id,
+                                min=0.01, max=10.0, step=0.01, value=float(default_val),
+                                marks=None,
+                                tooltip={"placement": "bottom", "always_visible": False},
+                                updatemode="mouseup",
+                            ),
+                            style={"flex": 1, "minWidth": 220}
+                        ),
+                        dcc.Input(
+                            id=input_id, type="number",
+                            min=0.01, max=10.0, step=0.01, value=float(default_val),
+                            style={"marginLeft": 10, "width": 120},
+                        ),
+                        html.Span(" Top-K %", style={"marginLeft": 6, "color": "#666"}),
+                        html.Span(id=avg_id, children=" Avg: -", style={"marginLeft": 14, "color": "#444"}),
+                    ],
+                    style={"display": "flex", "alignItems": "center"},
                 ),
-                dcc.Input(
-                    id=input_id, type="number",
-                    min=0.01, max=10.0, step=0.01, value=float(default_val),
-                    style={"marginTop": 6, "width": 120},
+                # Absolute controls
+                html.Div(
+                    [
+                        dcc.Input(
+                            id=abs_input_id, type="number",
+                            placeholder="Absolute radius ≥ ...",
+                            debounce=True, min=0, step=0.01,
+                            style={"width": 220, "marginTop": 6},
+                        ),
+                        html.Span(" Absolute radius", style={"marginLeft": 8, "color": "#666"}),
+                    ],
+                    style={"display": "flex", "alignItems": "center"},
                 ),
             ],
-            style={"marginBottom": 16},
+            style={"marginBottom": 18},
         )
 
     return html.Div(
         [
-            html.H2("2D / 3D Viewer", style={"marginBottom": 6}),
+            html.H2("Radii cleaner", style={"marginBottom": 6}),
             html.P(
-                "Drop an SWC file. Lines are WebGL (fast). "
-                "Use per-type Top-K% (0.01–10) to overlay bright dots at the largest radii for each type."
+                "Per-type Top-K% (0.01–10) and per-type absolute radius control the overlay. "
             ),
-            dcc.Upload(
-                id="upload-viewer", multiple=False,
-                children=html.Div(["Drag & drop or ", html.A("select an SWC file to view")]),
+            html.Div(
+                [
+                    html.Span("File source: "),
+                    html.Span(
+                        "Upload on the Format Validation tab. All tabs share the same working file.",
+                        style={"fontWeight": 600},
+                    ),
+                ],
                 style={
-                    "height": "64px", "lineHeight": "64px",
-                    "border": "2px dashed #999", "borderRadius": 6,
-                    "textAlign": "center", "marginBottom": 10,
+                    "padding": "12px",
+                    "border": "1px solid #ddd",
+                    "borderRadius": 6,
+                    "backgroundColor": "#f7f7f7",
+                    "marginBottom": 10,
                 },
             ),
-            html.Div(id="viewer-file-info", style={"color": "#555", "marginBottom": 12}),
+            html.Div(
+                id="viewer-file-info",
+                children="Upload on the Format Validation tab to load a shared SWC.",
+                style={"color": "#555", "marginBottom": 12},
+            ),
 
             html.Div(
                 [
@@ -231,13 +302,6 @@ def _viewer_tab():
                             ),
                             dcc.Graph(id="fig-view-2d", style={"height": 600}),
                         ],
-                        style={"flex": 1, "minWidth": 0, "marginRight": 12},
-                    ),
-                    html.Div(
-                        [
-                            html.H4("3D View"),
-                            dcc.Graph(id="fig-view-3d", style={"height": 600}),
-                        ],
                         style={"flex": 1, "minWidth": 0},
                     ),
                 ],
@@ -261,30 +325,87 @@ def _viewer_tab():
                 style={"marginBottom": 12},
             ),
 
-            html.H4("Per-type Top-K% (0.01–10) for overlay dots"),
-            html.P("Example: K=10 → top 10% • K=0.50 → top 0.5% • K=0.01 → most extreme."),
+            html.H4("Per-type Top-K% and Absolute Radius"),
+            html.P("Examples: K=10 → top 10% • K=0.50 → top 0.5% • Absolute ≥ 2.5 → radii ≥ 2.5 (must pass both if set)"),
             html.Div(
                 [
-                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", 10.0),
-                    topk_row("Soma",            "viewer-topk-soma",      "viewer-topk-soma-input",      10.0),
-                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      10.0),
-                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     10.0),
-                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    10.0),
-                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    10.0),
+                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", "viewer-abs-undefined", "viewer-avg-undefined", 10.0),
+                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      "viewer-abs-axon",      "viewer-avg-axon",      10.0),
+                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     "viewer-abs-basal",     "viewer-avg-basal",     10.0),
+                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    "viewer-abs-apical",    "viewer-avg-apical",    10.0),
+                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    "viewer-abs-custom",    "viewer-avg-custom",    10.0),
                 ],
-                style={"maxWidth": 860},
+                style={"maxWidth": 940},
             ),
 
-            # Single source of truth for K%
+            html.Hr(),
+            html.H4("Clean Radii"),
+            html.P("Pick a mode. Uses per-type values from controls above for each selected Type."),
+            html.Div(
+                [
+                    dcc.RadioItems(
+                        id="viewer-clean-mode",
+                        options=[
+                            {"label": " By percentage (Top-K%)", "value": "percent"},
+                            {"label": " By absolute value", "value": "absolute"},
+                        ],
+                        value="percent",
+                        inline=True,
+                        style={"marginRight": 18},
+                    ),
+                    dcc.Input(
+                        id="viewer-clean-value",
+                        type="number",
+                        placeholder="Uses per-type values above",
+                        disabled=True,
+                        style={"width": 240, "marginLeft": 8, "marginRight": 12},
+                    ),
+                    html.Button("Clean radii", id="btn-viewer-clean"),
+                    html.Span(id="viewer-clean-msg", style={"marginLeft": 10, "color": "#0a7"}),
+                ],
+                style={"display": "flex", "alignItems": "center", "flexWrap": "wrap", "gap": "10px", "marginBottom": 10},
+            ),
+
+            dash_table.DataTable(
+                id="table-viewer-clean-log",
+                columns=[
+                    {"name": "node_id", "id": "node_id"},
+                    {"name": "label", "id": "label"},
+                    {"name": "old_radius", "id": "old_radius"},
+                    {"name": "new_radius", "id": "new_radius"},
+                    {"name": "mode", "id": "mode"},
+                    {"name": "cutoff", "id": "cutoff"},
+                ],
+                data=[],
+                page_size=10,
+                style_table={"overflowX": "auto"},
+                style_cell={"fontSize": 14},
+            ),
+            html.Div(
+                [
+                    html.Button("Download cleaned SWC", id="btn-dl-viewer-clean-swc"),
+                    html.Button("Download clean log", id="btn-dl-viewer-clean-log", style={"marginLeft": 10}),
+                ],
+                style={"marginTop": 10, "marginBottom": 10},
+            ),
+
+            # Stores
             dcc.Store(
                 id="viewer-topk-store",
                 data={"undefined": 10.0, "soma": 10.0, "axon": 10.0,
                       "basal dendrite": 10.0, "apical dendrite": 10.0, "custom": 10.0},
             ),
+            dcc.Store(
+                id="viewer-abs-store",
+                data={"undefined": None, "soma": None, "axon": None,
+                      "basal dendrite": None, "apical dendrite": None, "custom": None},
+            ),
 
-            dcc.Store(id="store-viewer-df"),
+            dcc.Download(id="download-viewer-clean-swc"),
+            dcc.Download(id="download-viewer-clean-log"),
         ]
     )
+
 
 
 def build_layout():
@@ -292,14 +413,24 @@ def build_layout():
         [
             dcc.Tabs(
                 id="tabs",
-                value="tab-dendro",
+                value="tab-validate",
                 children=[
-                    dcc.Tab(label="Dendrogram Editor", value="tab-dendro"),
                     dcc.Tab(label="Format Validation", value="tab-validate"),
-                    dcc.Tab(label="2D/3D Viewer", value="tab-viewer"),
+                    dcc.Tab(label="Dendrogram Editor", value="tab-dendro"),
+                    dcc.Tab(label="Radii cleaner", value="tab-viewer"),
                 ],
             ),
-            html.Div(id="tab-content"),
+            html.Div(
+                id="tab-content",
+                children=[
+                    html.Div(
+                        _validation_tab(),
+                        id="tab-pane-validate",
+                    ),
+                    html.Div(_dendrogram_tab(), id="tab-pane-dendro", style={"display": "none"}),
+                    html.Div(_viewer_tab(), id="tab-pane-viewer", style={"display": "none"}),
+                ],
+            ),
 
             # global stores/downloads shared by the Dendrogram page
             dcc.Store(id="store-working-df"),
