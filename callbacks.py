@@ -1043,30 +1043,22 @@ def register_callbacks(app):
             abs_cut = 0.0 if (abs_cut is None) else float(abs_cut)
             eff_cut_by_label[lbl] = max(pct_cut, abs_cut)
 
-        # Determine if the first row is soma and whether soma edges exist
+        # Track whether the first row is soma and whether any soma edges exist
         first_is_soma = False
-        soma_first_has_edges = False
         if len(df) > 0:
             try:
                 first_is_soma = (label_for_type(int(df.iloc[0]["type"])) == "soma")
             except Exception:
                 first_is_soma = False
-            if first_is_soma:
-                soma_first_has_edges = bool(np.any(L[e_v] == "soma"))
+        soma_edges_present = bool(np.any(L[e_v] == "soma"))
 
         # ---- 2D base edges (UNFILTERED — only hide_thin affects visibility)
         traces2d, legend2d = [], set()
         for lbl, color in DEFAULT_COLORS.items():
             mask_lbl = (L[e_v] == lbl)
             if not np.any(mask_lbl):
-                # If first row is soma and soma has no edges, light its legend with a colored line placeholder.
                 if first_is_soma and (lbl == "soma"):
-                    traces2d.append(go.Scattergl(
-                        x=[None], y=[None], mode="lines",
-                        line=dict(width=THIN_2D, color=color),
-                        hoverinfo="skip", name=lbl, legendgroup=lbl,
-                        showlegend=True, visible=True,
-                    ))
+                    # Legend handled by the manually-added soma point
                     continue
                 traces2d.append(go.Scattergl(
                     x=[None], y=[None], mode="lines",
@@ -1146,8 +1138,7 @@ def register_callbacks(app):
                     showlegend=False,
                 )
             )
-            # If soma has no edges, add a colored line so legend lights up for soma
-            if not soma_first_has_edges:
+            if not soma_edges_present:
                 traces2d.append(
                     go.Scattergl(
                         x=[None], y=[None], mode="lines",
