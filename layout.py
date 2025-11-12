@@ -188,12 +188,15 @@ def _viewer_tab():
         slider_id: str, input_id: str,
         abs_input_id: str,
         avg_id: str,
+        mode_id: str,
+        button_id: str,
         default_val: float = 10.0,
     ):
         """
         Per-type controls:
           - Top-K% slider + numeric input (K in [0.01, 10])
           - Absolute radius numeric input (>= 0)
+          - Mode selector + clean button for that type
         """
         return html.Div(
             [
@@ -233,6 +236,22 @@ def _viewer_tab():
                         html.Span(" Absolute radius", style={"marginLeft": 8, "color": "#666"}),
                     ],
                     style={"display": "flex", "alignItems": "center"},
+                ),
+                html.Div(
+                    [
+                        dcc.RadioItems(
+                            id=mode_id,
+                            options=[
+                                {"label": "Top-K%", "value": "percent"},
+                                {"label": "Absolute", "value": "absolute"},
+                            ],
+                            value="percent",
+                            inline=True,
+                            style={"fontSize": 13},
+                        ),
+                        html.Button("Clean radii", id=button_id, style={"marginLeft": 12}),
+                    ],
+                    style={"display": "flex", "alignItems": "center", "marginTop": 6, "gap": "8px"},
                 ),
             ],
             style={"marginBottom": 18},
@@ -326,45 +345,54 @@ def _viewer_tab():
             ),
 
             html.H4("Per-type Top-K% and Absolute Radius"),
-            html.P("Examples: K=10 → top 10% • K=0.50 → top 0.5% • Absolute ≥ 2.5 → radii ≥ 2.5 (must pass both if set)"),
+            html.P(
+                "Set thresholds to highlight large radii: K keeps the top K% (K=10 → top 10%, K=0.50 → top 0.5%) "
+                "and Absolute keeps radii ≥ your value (e.g. ≥ 2.5). If both inputs exist for a type, the stricter "
+                "cutoff is used. Compare overlays and averages to decide a sensible cutoff, then press that row's "
+                "clean button to replace outliers with neighbor averages along the same branch.",
+                style={"maxWidth": 940, "color": "#444"},
+            ),
             html.Div(
                 [
-                    topk_row("Undefined",       "viewer-topk-undefined", "viewer-topk-undefined-input", "viewer-abs-undefined", "viewer-avg-undefined", 10.0),
-                    topk_row("Axon",            "viewer-topk-axon",      "viewer-topk-axon-input",      "viewer-abs-axon",      "viewer-avg-axon",      10.0),
-                    topk_row("Basal dendrite",  "viewer-topk-basal",     "viewer-topk-basal-input",     "viewer-abs-basal",     "viewer-avg-basal",     10.0),
-                    topk_row("Apical dendrite", "viewer-topk-apical",    "viewer-topk-apical-input",    "viewer-abs-apical",    "viewer-avg-apical",    10.0),
-                    topk_row("Custom (type≥5)", "viewer-topk-custom",    "viewer-topk-custom-input",    "viewer-abs-custom",    "viewer-avg-custom",    10.0),
+                    topk_row(
+                        "Undefined",
+                        "viewer-topk-undefined", "viewer-topk-undefined-input",
+                        "viewer-abs-undefined", "viewer-avg-undefined",
+                        "viewer-clean-mode-undefined", "btn-viewer-clean-undefined",
+                        10.0,
+                    ),
+                    topk_row(
+                        "Axon",
+                        "viewer-topk-axon", "viewer-topk-axon-input",
+                        "viewer-abs-axon", "viewer-avg-axon",
+                        "viewer-clean-mode-axon", "btn-viewer-clean-axon",
+                        10.0,
+                    ),
+                    topk_row(
+                        "Basal dendrite",
+                        "viewer-topk-basal", "viewer-topk-basal-input",
+                        "viewer-abs-basal", "viewer-avg-basal",
+                        "viewer-clean-mode-basal", "btn-viewer-clean-basal",
+                        10.0,
+                    ),
+                    topk_row(
+                        "Apical dendrite",
+                        "viewer-topk-apical", "viewer-topk-apical-input",
+                        "viewer-abs-apical", "viewer-avg-apical",
+                        "viewer-clean-mode-apical", "btn-viewer-clean-apical",
+                        10.0,
+                    ),
+                    topk_row(
+                        "Custom (type≥5)",
+                        "viewer-topk-custom", "viewer-topk-custom-input",
+                        "viewer-abs-custom", "viewer-avg-custom",
+                        "viewer-clean-mode-custom", "btn-viewer-clean-custom",
+                        10.0,
+                    ),
                 ],
                 style={"maxWidth": 940},
             ),
-
-            html.Hr(),
-            html.H4("Clean Radii"),
-            html.P("Pick a mode. Uses per-type values from controls above for each selected Type."),
-            html.Div(
-                [
-                    dcc.RadioItems(
-                        id="viewer-clean-mode",
-                        options=[
-                            {"label": " By percentage (Top-K%)", "value": "percent"},
-                            {"label": " By absolute value", "value": "absolute"},
-                        ],
-                        value="percent",
-                        inline=True,
-                        style={"marginRight": 18},
-                    ),
-                    dcc.Input(
-                        id="viewer-clean-value",
-                        type="number",
-                        placeholder="Uses per-type values above",
-                        disabled=True,
-                        style={"width": 240, "marginLeft": 8, "marginRight": 12},
-                    ),
-                    html.Button("Clean radii", id="btn-viewer-clean"),
-                    html.Span(id="viewer-clean-msg", style={"marginLeft": 10, "color": "#0a7"}),
-                ],
-                style={"display": "flex", "alignItems": "center", "flexWrap": "wrap", "gap": "10px", "marginBottom": 10},
-            ),
+            html.Div(id="viewer-clean-msg", style={"marginTop": 6, "color": "#0a7"}),
 
             dash_table.DataTable(
                 id="table-viewer-clean-log",

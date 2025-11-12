@@ -714,17 +714,29 @@ def register_callbacks(app):
         Output("validate-file-info", "children", allow_duplicate=True),
         Output("table-validate-results", "data", allow_duplicate=True),
         Output("store-validate-table", "data", allow_duplicate=True),
-        Input("btn-viewer-clean", "n_clicks"),
+        Input("btn-viewer-clean-undefined", "n_clicks"),
+        Input("btn-viewer-clean-axon", "n_clicks"),
+        Input("btn-viewer-clean-basal", "n_clicks"),
+        Input("btn-viewer-clean-apical", "n_clicks"),
+        Input("btn-viewer-clean-custom", "n_clicks"),
         State("store-working-df", "data"),
-        State("viewer-type-select", "value"),
-        State("viewer-clean-mode", "value"),
+        State("viewer-clean-mode-undefined", "value"),
+        State("viewer-clean-mode-axon", "value"),
+        State("viewer-clean-mode-basal", "value"),
+        State("viewer-clean-mode-apical", "value"),
+        State("viewer-clean-mode-custom", "value"),
         State("viewer-topk-store", "data"),
         State("viewer-abs-store", "data"),
         State("table-viewer-clean-log", "data"),
         State("store-filename", "data"),
         prevent_initial_call=True,
     )
-    def viewer_clean(n, df_records, type_selected, mode, topk_store, abs_store, log_rows, filename):
+    def viewer_clean(
+        btn_undef, btn_axon, btn_basal, btn_apical, btn_custom,
+        df_records,
+        mode_undef, mode_axon, mode_basal, mode_apical, mode_custom,
+        topk_store, abs_store, log_rows, filename,
+    ):
         if not df_records:
             return (
                 dash.no_update,
@@ -740,20 +752,36 @@ def register_callbacks(app):
             for col in ("x", "y", "z", "radius", "type"):
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-            # Determine labels to operate on
-            selected_labels = set(type_selected or [])
-            # Always exclude soma from cleaning
-            if "soma" in selected_labels:
-                selected_labels.discard("soma")
-            if not selected_labels:
+            ctx = dash.callback_context
+            triggered = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+            button_to_label = {
+                "btn-viewer-clean-undefined": "undefined",
+                "btn-viewer-clean-axon": "axon",
+                "btn-viewer-clean-basal": "basal dendrite",
+                "btn-viewer-clean-apical": "apical dendrite",
+                "btn-viewer-clean-custom": "custom",
+            }
+            if triggered not in button_to_label:
                 return (
                     dash.no_update,
-                    dash.no_update,
-                    "Select at least one Type.",
+                    log_rows or [],
+                    "Click a clean button.",
                     dash.no_update,
                     dash.no_update,
                     dash.no_update,
                 )
+            target_label = button_to_label[triggered]
+            mode_map = {
+                "undefined": mode_undef,
+                "axon": mode_axon,
+                "basal dendrite": mode_basal,
+                "apical dendrite": mode_apical,
+                "custom": mode_custom,
+            }
+            mode = (mode_map.get(target_label) or "percent").lower()
+            if mode not in {"percent", "absolute"}:
+                mode = "percent"
+            selected_labels = {target_label}
 
             # Prepare tree cache
             cache = build_tree_cache(df)
@@ -821,7 +849,7 @@ def register_callbacks(app):
                 return (
                     dash.no_update,
                     log_rows or [],
-                    "No nodes met the per-type cutoffs.",
+                    f"No {target_label} nodes met the cutoff.",
                     dash.no_update,
                     dash.no_update,
                     dash.no_update,
@@ -938,7 +966,8 @@ def register_callbacks(app):
             # Append logs (prepend like dendrogram)
             new_log = (changes + list(log_rows or []))
 
-            msg = f"Cleaned {len(changes)} node(s). Mode: {'Top-K%' if mode=='percent' else 'Absolute'}."
+            mode_label = "Top-K%" if mode == "percent" else "Absolute"
+            msg = f"Cleaned {len(changes)} node(s) in {target_label} • {mode_label} cutoff."
             validation_msg = dash.no_update
             validate_rows = dash.no_update
             validate_store = dash.no_update
