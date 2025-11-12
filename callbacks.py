@@ -977,7 +977,8 @@ def register_callbacks(app):
             return go.Figure()
 
         hide_thin = "hide_thin" in (perf_flags or [])
-        THIN_2D, THIN_3D = 0.8, 1.6
+        EDGE_LINE_WIDTH = 0.8
+        LEGEND_LINE_WIDTH = 2.2
         DOT_COLOR, DOT_EDGE_COLOR = "rgba(170,0,255,0.95)", "white"
         DOT_SCALE, DOT_MIN, DOT_MAX = 4.0, 3.0, 24.0
 
@@ -1050,45 +1051,48 @@ def register_callbacks(app):
                 first_is_soma = (label_for_type(int(df.iloc[0]["type"])) == "soma")
             except Exception:
                 first_is_soma = False
-        soma_edges_present = bool(np.any(L[e_v] == "soma"))
 
         # ---- 2D base edges (UNFILTERED — only hide_thin affects visibility)
-        traces2d, legend2d = [], set()
-        for lbl, color in DEFAULT_COLORS.items():
-            mask_lbl = (L[e_v] == lbl)
-            if not np.any(mask_lbl):
-                if first_is_soma and (lbl == "soma"):
-                    # Legend handled by the manually-added soma point
-                    continue
-                traces2d.append(go.Scattergl(
-                    x=[None], y=[None], mode="lines",
-                    line=dict(width=THIN_2D, color=color),
-                    hoverinfo="skip", name=lbl, legendgroup=lbl,
-                    showlegend=True, visible="legendonly",
-                ))
-                continue
-            uu = e_u[mask_lbl]; vv = e_v[mask_lbl]
-            x0, y0 = X2[uu], Y2[uu]
-            x1, y1 = X2[vv], Y2[vv]
-            Xs, Ys = segments_2d(x0, y0, x1, y1)
-            cd = np.repeat(R[vv], 2).astype(np.float32)
+        traces2d = []
 
-            if not hide_thin:
-                traces2d.append(go.Scattergl(
-                    x=Xs, y=Ys, mode="lines",
-                    line=dict(width=THIN_2D, color=color),
-                    hovertemplate="radius = %{customdata:.4f}<extra></extra>",
-                    customdata=cd,
-                    name=lbl, legendgroup=lbl, showlegend=(lbl not in legend2d),
-                ))
-                legend2d.add(lbl)
-            else:
-                traces2d.append(go.Scattergl(
+        def add_legend_entry(lbl: str, color: str, rank: int, active: bool):
+            display = lbl if lbl != "custom" else "custom (5+)"
+            traces2d.append(
+                go.Scattergl(
                     x=[None], y=[None], mode="lines",
-                    line=dict(width=THIN_2D, color=color),
-                    hoverinfo="skip", name=lbl, legendgroup=lbl,
-                    showlegend=True, visible="legendonly",
-                ))
+                    line=dict(width=LEGEND_LINE_WIDTH, color=color),
+                    hoverinfo="skip", name=display, legendgroup=lbl,
+                    showlegend=True,
+                    visible=True if active else "legendonly",
+                    legendrank=rank if active else 100 + rank,
+                )
+            )
+
+        for legend_rank, (lbl, color) in enumerate(DEFAULT_COLORS.items()):
+            mask_lbl = (L[e_v] == lbl)
+            label_has_edges = bool(np.any(mask_lbl))
+            legend_active = label_has_edges or (lbl == "soma" and first_is_soma)
+
+            if label_has_edges and not hide_thin:
+                uu = e_u[mask_lbl]; vv = e_v[mask_lbl]
+                x0, y0 = X2[uu], Y2[uu]
+                x1, y1 = X2[vv], Y2[vv]
+                Xs, Ys = segments_2d(x0, y0, x1, y1)
+                cd = np.repeat(R[vv], 2).astype(np.float32)
+
+                traces2d.append(
+                    go.Scattergl(
+                        x=Xs, y=Ys, mode="lines",
+                        line=dict(width=EDGE_LINE_WIDTH, color=color),
+                        hovertemplate="radius = %{customdata:.4f}<extra></extra>",
+                        customdata=cd,
+                        name=lbl if lbl != "custom" else "custom (5+)",
+                        legendgroup=lbl,
+                        showlegend=False,
+                    )
+                )
+
+            add_legend_entry(lbl, color, legend_rank, legend_active)
 
         # ---- 2D overlay dots (filtered by MAX rule) excluding soma
         selected_labels = set(type_selected or [])
@@ -1138,21 +1142,13 @@ def register_callbacks(app):
                     showlegend=False,
                 )
             )
-            if not soma_edges_present:
-                traces2d.append(
-                    go.Scattergl(
-                        x=[None], y=[None], mode="lines",
-                        line=dict(width=THIN_2D, color=fcolor),
-                        hoverinfo="skip", name="soma", legendgroup="soma",
-                        showlegend=True, visible=True,
-                    )
-                )
 
         fig2d = go.Figure(traces2d)
         fig2d.update_layout(
             xaxis_title=xlab, yaxis_title=ylab, template="plotly_white",
             height=600, margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Type",
             hovermode="closest", hoverdistance=15,
+            legend=dict(groupclick="togglegroup"),
             showlegend=True,
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
