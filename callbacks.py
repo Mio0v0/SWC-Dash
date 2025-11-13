@@ -714,17 +714,29 @@ def register_callbacks(app):
         Output("validate-file-info", "children", allow_duplicate=True),
         Output("table-validate-results", "data", allow_duplicate=True),
         Output("store-validate-table", "data", allow_duplicate=True),
-        Input("btn-viewer-clean", "n_clicks"),
+        Input("btn-viewer-clean-undefined", "n_clicks"),
+        Input("btn-viewer-clean-axon", "n_clicks"),
+        Input("btn-viewer-clean-basal", "n_clicks"),
+        Input("btn-viewer-clean-apical", "n_clicks"),
+        Input("btn-viewer-clean-custom", "n_clicks"),
         State("store-working-df", "data"),
-        State("viewer-type-select", "value"),
-        State("viewer-clean-mode", "value"),
+        State("viewer-clean-mode-undefined", "value"),
+        State("viewer-clean-mode-axon", "value"),
+        State("viewer-clean-mode-basal", "value"),
+        State("viewer-clean-mode-apical", "value"),
+        State("viewer-clean-mode-custom", "value"),
         State("viewer-topk-store", "data"),
         State("viewer-abs-store", "data"),
         State("table-viewer-clean-log", "data"),
         State("store-filename", "data"),
         prevent_initial_call=True,
     )
-    def viewer_clean(n, df_records, type_selected, mode, topk_store, abs_store, log_rows, filename):
+    def viewer_clean(
+        btn_undef, btn_axon, btn_basal, btn_apical, btn_custom,
+        df_records,
+        mode_undef, mode_axon, mode_basal, mode_apical, mode_custom,
+        topk_store, abs_store, log_rows, filename,
+    ):
         if not df_records:
             return (
                 dash.no_update,
@@ -740,20 +752,36 @@ def register_callbacks(app):
             for col in ("x", "y", "z", "radius", "type"):
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-            # Determine labels to operate on
-            selected_labels = set(type_selected or [])
-            # Always exclude soma from cleaning
-            if "soma" in selected_labels:
-                selected_labels.discard("soma")
-            if not selected_labels:
+            ctx = dash.callback_context
+            triggered = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+            button_to_label = {
+                "btn-viewer-clean-undefined": "undefined",
+                "btn-viewer-clean-axon": "axon",
+                "btn-viewer-clean-basal": "basal dendrite",
+                "btn-viewer-clean-apical": "apical dendrite",
+                "btn-viewer-clean-custom": "custom",
+            }
+            if triggered not in button_to_label:
                 return (
                     dash.no_update,
-                    dash.no_update,
-                    "Select at least one Type.",
+                    log_rows or [],
+                    "Click a clean button.",
                     dash.no_update,
                     dash.no_update,
                     dash.no_update,
                 )
+            target_label = button_to_label[triggered]
+            mode_map = {
+                "undefined": mode_undef,
+                "axon": mode_axon,
+                "basal dendrite": mode_basal,
+                "apical dendrite": mode_apical,
+                "custom": mode_custom,
+            }
+            mode = (mode_map.get(target_label) or "percent").lower()
+            if mode not in {"percent", "absolute"}:
+                mode = "percent"
+            selected_labels = {target_label}
 
             # Prepare tree cache
             cache = build_tree_cache(df)
@@ -821,7 +849,7 @@ def register_callbacks(app):
                 return (
                     dash.no_update,
                     log_rows or [],
-                    "No nodes met the per-type cutoffs.",
+                    f"No {target_label} nodes met the cutoff.",
                     dash.no_update,
                     dash.no_update,
                     dash.no_update,
@@ -938,7 +966,8 @@ def register_callbacks(app):
             # Append logs (prepend like dendrogram)
             new_log = (changes + list(log_rows or []))
 
-            msg = f"Cleaned {len(changes)} node(s). Mode: {'Top-K%' if mode=='percent' else 'Absolute'}."
+            mode_label = "Top-K%" if mode == "percent" else "Absolute"
+            msg = f"Cleaned {len(changes)} node(s) in {target_label} • {mode_label} cutoff."
             validation_msg = dash.no_update
             validate_rows = dash.no_update
             validate_store = dash.no_update
@@ -977,7 +1006,8 @@ def register_callbacks(app):
             return go.Figure()
 
         hide_thin = "hide_thin" in (perf_flags or [])
-        THIN_2D, THIN_3D = 0.8, 1.6
+        EDGE_LINE_WIDTH = 0.8
+        LEGEND_LINE_WIDTH = 2.2
         DOT_COLOR, DOT_EDGE_COLOR = "rgba(170,0,255,0.95)", "white"
         DOT_SCALE, DOT_MIN, DOT_MAX = 4.0, 3.0, 24.0
 
@@ -1043,60 +1073,55 @@ def register_callbacks(app):
             abs_cut = 0.0 if (abs_cut is None) else float(abs_cut)
             eff_cut_by_label[lbl] = max(pct_cut, abs_cut)
 
-        # Determine if the first row is soma and whether soma edges exist
+        # Track whether the first row is soma and whether any soma edges exist
         first_is_soma = False
-        soma_first_has_edges = False
         if len(df) > 0:
             try:
                 first_is_soma = (label_for_type(int(df.iloc[0]["type"])) == "soma")
             except Exception:
                 first_is_soma = False
-            if first_is_soma:
-                soma_first_has_edges = bool(np.any(L[e_v] == "soma"))
 
         # ---- 2D base edges (UNFILTERED — only hide_thin affects visibility)
-        traces2d, legend2d = [], set()
-        for lbl, color in DEFAULT_COLORS.items():
-            mask_lbl = (L[e_v] == lbl)
-            if not np.any(mask_lbl):
-                # If first row is soma and soma has no edges, light its legend with a colored line placeholder.
-                if first_is_soma and (lbl == "soma"):
-                    traces2d.append(go.Scattergl(
-                        x=[None], y=[None], mode="lines",
-                        line=dict(width=THIN_2D, color=color),
-                        hoverinfo="skip", name=lbl, legendgroup=lbl,
-                        showlegend=True, visible=True,
-                    ))
-                    continue
-                traces2d.append(go.Scattergl(
-                    x=[None], y=[None], mode="lines",
-                    line=dict(width=THIN_2D, color=color),
-                    hoverinfo="skip", name=lbl, legendgroup=lbl,
-                    showlegend=True, visible="legendonly",
-                ))
-                continue
-            uu = e_u[mask_lbl]; vv = e_v[mask_lbl]
-            x0, y0 = X2[uu], Y2[uu]
-            x1, y1 = X2[vv], Y2[vv]
-            Xs, Ys = segments_2d(x0, y0, x1, y1)
-            cd = np.repeat(R[vv], 2).astype(np.float32)
+        traces2d = []
 
-            if not hide_thin:
-                traces2d.append(go.Scattergl(
-                    x=Xs, y=Ys, mode="lines",
-                    line=dict(width=THIN_2D, color=color),
-                    hovertemplate="radius = %{customdata:.4f}<extra></extra>",
-                    customdata=cd,
-                    name=lbl, legendgroup=lbl, showlegend=(lbl not in legend2d),
-                ))
-                legend2d.add(lbl)
-            else:
-                traces2d.append(go.Scattergl(
+        def add_legend_entry(lbl: str, color: str, rank: int, active: bool):
+            display = lbl if lbl != "custom" else "custom (5+)"
+            traces2d.append(
+                go.Scattergl(
                     x=[None], y=[None], mode="lines",
-                    line=dict(width=THIN_2D, color=color),
-                    hoverinfo="skip", name=lbl, legendgroup=lbl,
-                    showlegend=True, visible="legendonly",
-                ))
+                    line=dict(width=LEGEND_LINE_WIDTH, color=color),
+                    hoverinfo="skip", name=display, legendgroup=lbl,
+                    showlegend=True,
+                    visible=True if active else "legendonly",
+                    legendrank=rank if active else 100 + rank,
+                )
+            )
+
+        for legend_rank, (lbl, color) in enumerate(DEFAULT_COLORS.items()):
+            mask_lbl = (L[e_v] == lbl)
+            label_has_edges = bool(np.any(mask_lbl))
+            legend_active = label_has_edges or (lbl == "soma" and first_is_soma)
+
+            if label_has_edges and not hide_thin:
+                uu = e_u[mask_lbl]; vv = e_v[mask_lbl]
+                x0, y0 = X2[uu], Y2[uu]
+                x1, y1 = X2[vv], Y2[vv]
+                Xs, Ys = segments_2d(x0, y0, x1, y1)
+                cd = np.repeat(R[vv], 2).astype(np.float32)
+
+                traces2d.append(
+                    go.Scattergl(
+                        x=Xs, y=Ys, mode="lines",
+                        line=dict(width=EDGE_LINE_WIDTH, color=color),
+                        hovertemplate="radius = %{customdata:.4f}<extra></extra>",
+                        customdata=cd,
+                        name=lbl if lbl != "custom" else "custom (5+)",
+                        legendgroup=lbl,
+                        showlegend=False,
+                    )
+                )
+
+            add_legend_entry(lbl, color, legend_rank, legend_active)
 
         # ---- 2D overlay dots (filtered by MAX rule) excluding soma
         selected_labels = set(type_selected or [])
@@ -1146,22 +1171,13 @@ def register_callbacks(app):
                     showlegend=False,
                 )
             )
-            # If soma has no edges, add a colored line so legend lights up for soma
-            if not soma_first_has_edges:
-                traces2d.append(
-                    go.Scattergl(
-                        x=[None], y=[None], mode="lines",
-                        line=dict(width=THIN_2D, color=fcolor),
-                        hoverinfo="skip", name="soma", legendgroup="soma",
-                        showlegend=True, visible=True,
-                    )
-                )
 
         fig2d = go.Figure(traces2d)
         fig2d.update_layout(
             xaxis_title=xlab, yaxis_title=ylab, template="plotly_white",
             height=600, margin=dict(l=10, r=10, t=30, b=10), legend_title_text="Type",
             hovermode="closest", hoverdistance=15,
+            legend=dict(groupclick="togglegroup"),
             showlegend=True,
         )
         fig2d.update_yaxes(scaleanchor="x", scaleratio=1.0)
