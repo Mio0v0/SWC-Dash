@@ -47,56 +47,85 @@ def _dendrogram_tab():
                 },
             ),
 
-            # Dendrogram editor
+            # Dendrogram graphs (scrollable)
+            html.Div(id="dendro-graphs-container", children=[]),
+
+            # ----- Sticky bottom control panel -----
             html.Div(
                 [
+                    # Row 1: Selection info
                     html.Div(
                         [
-                            html.H4("Dendrogram"),
-                            dcc.Graph(id="fig-dendro", style={"height": 900}),
                             html.Div(
                                 [
-                                    html.Div(
-                                        [
-                                            html.Span("Selected SWC id: "),
-                                            html.Code(id="selected-node-id", children="-"),
-                                        ],
-                                        style={"marginTop": 4},
+                                    html.Span("Selected SWC id: ", style={"fontWeight": 500}),
+                                    html.Code(id="selected-node-id", children="-"),
+                                    html.Span(" | ", style={"color": "#bbb", "margin": "0 6px"}),
+                                    html.Span("Type: "),
+                                    html.Span(
+                                        id="type-chip",
+                                        style={
+                                            "display": "inline-block",
+                                            "width": "10px", "height": "10px",
+                                            "borderRadius": "2px", "marginRight": "4px",
+                                            "backgroundColor": "#ccc", "verticalAlign": "middle",
+                                        },
                                     ),
-                                    html.Div(
-                                        [
-                                            html.Span("Type: "),
-                                            html.Span(
-                                                id="type-chip",
-                                                style={
-                                                    "display": "inline-block",
-                                                    "width": "12px",
-                                                    "height": "12px",
-                                                    "borderRadius": "2px",
-                                                    "marginRight": "6px",
-                                                    "backgroundColor": "#ccc",
-                                                    "verticalAlign": "middle",
-                                                },
-                                            ),
-                                            html.Span(id="selected-type", children="-", style={"fontWeight": 600}),
-                                        ],
-                                        style={"marginTop": 4},
-                                    ),
+                                    html.Span(id="selected-type", children="-", style={"fontWeight": 600}),
+                                    html.Span(" | ", style={"color": "#bbb", "margin": "0 6px"}),
+                                    html.Span("Level: "),
+                                    html.Span(id="selected-level", children="-", style={"fontWeight": 600}),
+                                    html.Span(id="selected-tree-info", children="", style={"color": "#666", "marginLeft": 8}),
                                 ],
-                                style={"marginTop": 6},
+                                style={"fontSize": 14},
                             ),
-                            html.Div(
-                                [
-                                    dcc.Input(
-                                        id="new-type", type="number",
-                                        placeholder="New SWC type (0–7+ allowed)",
-                                        min=0, step=1,
-                                        style={"width": 240, "marginRight": 8},
-                                    ),
-                                    html.Button("Apply type change", id="btn-apply"),
-                                ],
-                                style={"marginTop": 8},
-                            ),
+                        ],
+                        style={"marginBottom": 6},
+                    ),
+
+                    # Row 2: Type buttons + Apply
+                    html.Div(
+                        [
+                            html.Span("New type: ", style={"fontWeight": 500, "marginRight": 6, "fontSize": 13}),
+                            *[
+                                html.Button(
+                                    f"{t}: {lbl}",
+                                    id=f"new-type-radio-{t}",
+                                    n_clicks=0,
+                                    style={
+                                        "padding": "3px 10px",
+                                        "margin": "0 3px",
+                                        "borderRadius": "4px",
+                                        "border": f"2px solid {clr}",
+                                        "background": "transparent",
+                                        "color": clr,
+                                        "fontSize": 12,
+                                        "fontWeight": 600,
+                                        "cursor": "pointer",
+                                    },
+                                )
+                                for t, lbl, clr in [
+                                    (0, "undefined", "#808080"),
+                                    (1, "soma", "#2ca02c"),
+                                    (2, "axon", "#1f77b4"),
+                                    (3, "basal", "#d62728"),
+                                    (4, "apical", "#e377c2"),
+                                    (5, "custom", "#ff7f0e"),
+                                ]
+                            ],
+
+                            # Hidden store for selected type value
+                            dcc.Store(id="new-type-store", data=None),
+                            html.Span(id="new-type-display", children="", style={"marginLeft": 8, "fontSize": 12, "color": "#888"}),
+                            html.Button("Apply type change", id="btn-apply", style={"marginLeft": 12}),
+                            html.Button("Undo last change", id="btn-undo", n_clicks=0, style={"marginLeft": 8}),
+                        ],
+                        style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"},
+                    ),
+
+                    # Row 3: Scope + options
+                    html.Div(
+                        [
                             dcc.RadioItems(
                                 id="apply-scope",
                                 options=[
@@ -105,15 +134,48 @@ def _dendrogram_tab():
                                 ],
                                 value="subtree",
                                 inline=True,
-                                style={"marginTop": 6},
+                                style={"fontSize": 13},
                             ),
-                            html.Div(id="apply-msg", style={"color": "#0a7", "marginTop": 6}),
+                            html.Span(" | ", style={"color": "#ddd", "margin": "0 8px"}),
+                            dcc.Checklist(
+                                id="dendro-compress-x",
+                                options=[{"label": " Compress x-axis (sqrt scale)", "value": "compress"}],
+                                value=["compress"],
+                                inline=True,
+                                style={"fontSize": 13, "color": "#555"},
+                            ),
+                            html.Span(" | ", style={"color": "#ddd", "margin": "0 8px"}),
+                            html.Span("Level indicator: ", style={"fontSize": 13, "color": "#555"}),
+                            dcc.Input(
+                                id="dendro-level-input",
+                                type="number",
+                                placeholder="#",
+                                min=0, step=1,
+                                debounce=True,
+                                style={"width": 60, "marginLeft": 4, "marginRight": 6},
+                            ),
+                            html.Span(
+                                id="dendro-level-info",
+                                children="",
+                                style={"fontSize": 12, "color": "#888"},
+                            ),
                         ],
-                        style={"flex": 1, "minWidth": 0},
+                        style={"display": "flex", "alignItems": "center", "flexWrap": "wrap", "marginTop": 4},
                     ),
+
+                    html.Div(id="apply-msg", style={"color": "#0a7", "marginTop": 4, "fontSize": 13}),
                 ],
-                style={"display": "flex", "flexWrap": "wrap"},
+                style={
+                    "position": "sticky",
+                    "bottom": 0,
+                    "background": "#f8f8fa",
+                    "borderTop": "2px solid #ddd",
+                    "padding": "10px 14px",
+                    "zIndex": 100,
+                    "boxShadow": "0 -2px 8px rgba(0,0,0,0.08)",
+                },
             ),
+
 
             html.Hr(),
             html.H4("Change log"),
@@ -140,6 +202,7 @@ def _dendrogram_tab():
     )
 
 
+
 def _validation_tab():
     return html.Div(
         [
@@ -155,29 +218,70 @@ def _validation_tab():
             ),
 
             html.Div(id="validate-file-info", style={"color": "#555", "marginBottom": 8}),
-            dash_table.DataTable(
-                id="table-validate-results",
-                columns=[
-                    {"name": "check",  "id": "check"},
-                    {"name": "status", "id": "status"},
-                ],
-                data=[],
-                page_size=15,
-                style_table={"overflowX": "auto"},
-                style_cell={"fontSize": 14},
+            html.Div(id="validation-grid-container", children=[]),
+            html.Div(
+                id="save-tree-status",
+                children="",
+                style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#0a7",
+                       "maxWidth": 700, "marginTop": 4, "marginBottom": 4},
             ),
 
             html.Div(
                 [
                     html.Button("Download validation JSON", id="btn-dl-validate-json"),
+                    html.Button(
+                        "Save all trees to folder…",
+                        id="btn-save-all-trees",
+                        title="Opens a folder picker; saves each tree as a separate SWC file there.",
+                        style={"marginLeft": 10},
+                    ),
                 ],
                 style={"marginTop": 10},
             ),
+            html.Div(
+                id="save-all-trees-status",
+                children="",
+                style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#0a7",
+                       "maxWidth": 700, "marginTop": 4},
+            ),
+
+            # ---- Batch folder split panel ----
+            html.Hr(style={"marginTop": 20}),
+            html.H4("Batch folder split", style={"marginBottom": 6}),
+            html.P(
+                "Click the button to select a folder. Every multi-tree SWC file in that "
+                "folder will be split into individual tree files saved in a sub-folder named "
+                "after the original file.",
+                style={"color": "#555", "fontSize": 13, "maxWidth": 700},
+            ),
+            html.Button(
+                "📂  Select folder to split…",
+                id="btn-batch-split",
+                style={
+                    "padding": "10px 20px",
+                    "border": "2px dashed #999",
+                    "borderRadius": 6,
+                    "background": "#fafafa",
+                    "cursor": "pointer",
+                    "fontSize": 14,
+                    "color": "#333",
+                    "marginBottom": 8,
+                },
+            ),
+            html.Div(
+                id="batch-split-status",
+                children="",
+                style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#333",
+                       "maxWidth": 700, "marginTop": 4},
+            ),
 
             dcc.Store(id="store-validate-table"),
+            dcc.Store(id="store-validate-swc-text"),
             dcc.Download(id="download-validate-json"),
         ]
     )
+
+
 
 
 from dash import html, dcc
@@ -462,6 +566,7 @@ def build_layout():
 
             # global stores/downloads shared by the Dendrogram page
             dcc.Store(id="store-working-df"),
+            dcc.Store(id="store-df-history"),  # Added store for Undo history
             dcc.Store(id="store-dendro-info"),
             dcc.Store(id="store-filename"),
             dcc.Download(id="download-edited-swc"),

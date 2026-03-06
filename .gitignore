@@ -25,3 +25,4 @@ __pycache__/
 # Logs and temporary
 *.log
 .DS_Store
+/.agents

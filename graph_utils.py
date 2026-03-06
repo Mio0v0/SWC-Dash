@@ -156,6 +156,59 @@ def children_payload(cache: TreeCache) -> Dict[str, List[int]]:
         "indices": cache.child_indices.astype(int).tolist(),
     }
 
+
+def compute_levels(cache: TreeCache, root: int) -> np.ndarray:
+    """BFS from *root* to assign topological depth (root = level 0)."""
+    levels = np.full(cache.size, -1, dtype=np.int32)
+    if cache.size == 0:
+        return levels
+    levels[root] = 0
+    stack = [int(root)]
+    while stack:
+        u = stack.pop()
+        start = int(cache.child_offsets[u])
+        end = int(cache.child_offsets[u + 1])
+        for c in cache.child_indices[start:end].tolist():
+            levels[c] = levels[u] + 1
+            stack.append(c)
+    return levels
+
+
+def find_all_roots(cache: TreeCache) -> List[int]:
+    """
+    Return root indices sorted: soma-rooted trees first, then by
+    descending subtree size.
+    """
+    if cache.size == 0:
+        return []
+
+    roots = np.flatnonzero(cache.parent_index < 0).tolist()
+    if not roots:
+        return [0]
+
+    # Compute subtree sizes via BFS from each root
+    def _subtree_size(r: int) -> int:
+        count = 0
+        st = [int(r)]
+        while st:
+            u = st.pop()
+            count += 1
+            start = int(cache.child_offsets[u])
+            end = int(cache.child_offsets[u + 1])
+            st.extend(cache.child_indices[start:end].tolist())
+        return count
+
+    info = []
+    for r in roots:
+        is_soma = int(cache.types[r]) == 1
+        size = _subtree_size(r)
+        info.append((r, is_soma, size))
+
+    # Sort: soma-rooted first, then by ascending root node id
+    info.sort(key=lambda t: (not t[1], cache.ids[t[0]]))
+    return [r for r, _, _ in info]
+
+
 def subtree_nodes(kids: Union[List[List[int]], Dict[str, Sequence[int]]], root: int) -> List[int]:
     stack = [int(root)]
     out: List[int] = []
@@ -184,3 +237,83 @@ def subtree_nodes(kids: Union[List[List[int]], Dict[str, Sequence[int]]], root: 
         out.append(u)
         stack.extend(kids[u])
     return out
+
+
+def merge_dangling_trees(df: pd.DataFrame) -> pd.DataFrame:
+    """Re-parent non-soma tree roots to the nearest soma node.
+
+    Only trees that contain at least one soma node (type == 1) are kept as
+    independent trees.  Every other disconnected component ("dangling branch")
+    has its root re-parented to the spatially closest soma node.
+
+    Returns a **copy** of *df* with updated ``parent`` values.
+    """
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+
+    ids = df["id"].to_numpy()
+    types = df["type"].to_numpy()
+    parents = df["parent"].to_numpy()
+    xyz = df[["x", "y", "z"]].to_numpy(dtype=np.float64)
+
+    id2idx = {int(ids[i]): i for i in range(len(ids))}
+
+    # Build children map (id -> list of child ids)
+    children_map: Dict[int, List[int]] = {}
+    for i in range(len(ids)):
+        pid = int(parents[i])
+        if pid >= 0:
+            children_map.setdefault(pid, []).append(int(ids[i]))
+
+    # Find all roots
+    root_indices = [i for i in range(len(ids)) if int(parents[i]) < 0]
+
+    # Classify each root's tree
+    soma_trees: List[Tuple[int, set]] = []     # (root_idx, member_indices)
+    dangling_trees: List[Tuple[int, set]] = []  # (root_idx, member_indices)
+
+    for ri in root_indices:
+        root_id = int(ids[ri])
+        members = set()
+        queue = [root_id]
+        has_soma = False
+        while queue:
+            nid = queue.pop(0)
+            idx = id2idx.get(nid)
+            if idx is None or nid in members:
+                continue
+            members.add(nid)
+            if int(types[idx]) == 1:
+                has_soma = True
+            for child in children_map.get(nid, []):
+                queue.append(child)
+
+        if has_soma:
+            soma_trees.append((ri, members))
+        else:
+            dangling_trees.append((ri, members))
+
+    if not dangling_trees or not soma_trees:
+        return df  # nothing to merge
+
+    # Collect all soma node indices (for distance computation)
+    soma_node_indices = [i for i in range(len(ids)) if int(types[i]) == 1]
+    if not soma_node_indices:
+        return df
+
+    soma_xyz = xyz[soma_node_indices]  # (S, 3)
+    soma_ids = ids[soma_node_indices]
+
+    # For each dangling tree, find nearest soma and re-parent
+    for droot_idx, _members in dangling_trees:
+        droot_xyz = xyz[droot_idx]  # (3,)
+        dists = np.linalg.norm(soma_xyz - droot_xyz, axis=1)
+        nearest = int(np.argmin(dists))
+        nearest_soma_id = int(soma_ids[nearest])
+
+        # Update the parent of the dangling root
+        df.iloc[droot_idx, df.columns.get_loc("parent")] = nearest_soma_id
+
+    return df

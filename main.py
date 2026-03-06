@@ -77,6 +77,7 @@ def main():
             host=HOST,
             port=PORT,
             debug=not is_frozen,   # debug=False in exe -> real 500s, no Werkzeug debugger
+            dev_tools_props_check=False,   # prevent debug panel from auto-expanding
             use_reloader=False,    # important for PyInstaller
         )
     except Exception:
