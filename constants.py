@@ -19,6 +19,12 @@ DEFAULT_COLORS = {
     "custom": "#ff7f0e",  # for types >= 5
 }
 
+# Distinct colors for identifying trees (up to 10)
+TREE_COLORS = [
+    "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
+    "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990",
+]
+
 def label_for_type(t: int) -> str:
     t = int(t)
     return TYPE_LABEL.get(t, "custom") if t <= 4 else "custom"

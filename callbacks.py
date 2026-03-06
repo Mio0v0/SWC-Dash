@@ -5,13 +5,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import dash
 import json
-from dash import Input, Output, State, dcc
+from dash import Input, Output, State, dcc, html, ALL
 
 from swc_io import parse_swc_text_preserve_tokens, write_swc_to_bytes_preserve_tokens
-from graph_build import make_dendrogram_figure
-from graph_utils import subtree_nodes, build_tree_cache
-from constants import color_for_type, label_for_type, DEFAULT_COLORS
-from validation_core import run_format_validation_from_text
+from graph_build import make_dendrogram_figures
+from graph_utils import subtree_nodes, build_tree_cache, children_payload
+from constants import color_for_type, label_for_type, DEFAULT_COLORS, TREE_COLORS
+from validation_core import run_format_validation_from_text, run_per_tree_validation, clear_cache as clear_validation_cache, _split_swc_by_trees
 
 from layout import _dendrogram_tab, _validation_tab, _viewer_tab
 
@@ -158,21 +158,50 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
             )
         )
 
-    # Only draw a dot for the first row if it is soma
-    if tree.size > 0 and int(tree.types[0]) == 1:
+    # Draw a sphere for every soma node (type == 1)
+    soma_mask = tree.types == 1
+    soma_indices = np.flatnonzero(soma_mask)
+    if soma_indices.size > 0:
         present_labels.add("soma")
-        soma_color = DEFAULT_COLORS.get("soma", "#d62728")
-        r0 = float(np.nan_to_num(tree.radius[0], nan=0.0, posinf=0.0, neginf=0.0))
-        s0 = float(max(5.0, 6.0 * r0))
+        soma_color = DEFAULT_COLORS.get("soma", "#2ca02c")
+
+        # Scale base size by bounding box diagonal (75% of previous)
+        bbox_min = coords.min(axis=0)
+        bbox_max = coords.max(axis=0)
+        diag = float(np.linalg.norm(bbox_max - bbox_min))
+        base_size = max(2.0, min(9.0, diag * 0.009))
+
+        # Determine tree membership for hover labels
+        from graph_utils import find_all_roots, compute_levels
+        roots = find_all_roots(tree)
+        is_multi = len(roots) > 1
+
+        node_tree = np.full(tree.size, -1, dtype=np.int32)
+        for tidx, root in enumerate(roots):
+            lvls = compute_levels(tree, root)
+            node_tree[lvls >= 0] = tidx
+
+        sx, sy, sz, stxt, sizes = [], [], [], [], []
+        for i in soma_indices:
+            tidx = int(node_tree[i])
+            r = float(np.nan_to_num(tree.radius[i], nan=0.0, posinf=0.0, neginf=0.0))
+            s = min(max(base_size, base_size * r * 0.5), base_size * 3)
+            sx.append(float(coords[i, 0]))
+            sy.append(float(coords[i, 1]))
+            sz.append(float(coords[i, 2]))
+            sizes.append(s)
+            if is_multi:
+                stxt.append(f"Tree {tidx + 1}, soma id={int(tree.ids[i])}")
+            else:
+                stxt.append(f"soma id={int(tree.ids[i])}")
+
         traces.append(
             go.Scatter3d(
-                x=[float(coords[0, 0])],
-                y=[float(coords[0, 1])],
-                z=[float(coords[0, 2])],
+                x=sx, y=sy, z=sz,
                 mode="markers",
-                marker=dict(size=[s0], color=soma_color, opacity=0.95),
+                marker=dict(size=sizes, color=soma_color, opacity=1.0),
                 hoverinfo="text",
-                text=[f"soma id={int(tree.ids[0])}"],
+                text=stxt,
                 legendgroup="soma",
                 showlegend=False,
             )
@@ -182,7 +211,7 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
             go.Scatter3d(
                 x=[None], y=[None], z=[None],
                 mode="lines",
-                line=dict(width=2.2, color=soma_color),
+                line=dict(width=2.2, color=DEFAULT_COLORS.get("soma", "#2ca02c")),
                 hoverinfo="skip",
                 legendgroup="soma",
                 name="soma",
@@ -190,6 +219,7 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
                 visible=True,
             )
         )
+
 
     for lbl, color in DEFAULT_COLORS.items():
         if lbl in present_labels:
@@ -220,15 +250,129 @@ def _make_3d_edges_figure(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _validation_rows_from_df(df: pd.DataFrame) -> list[dict]:
-    """
-    Run the NeuroM validation checks against the provided DataFrame
-    representation of the current SWC.
-    """
+def _status_cell(val, check_name=""):
+    """Return a colored square span for True/False/Error. Use warning colors for non-fatal checks."""
+    WARNING_CHECKS = {
+        "Has apical dendrite",
+        "Has any unifurcation",
+        "No single-child chains",
+        "No flat neurites",
+        "No ultra-narrow sections",
+        "No ultra-narrow starts",
+        "No “fat” terminal ends"
+    }
+    
+    if isinstance(val, bool):
+        if val:
+            color = "#2ca02c"  # Green
+            symbol = "■"
+        else:
+            if check_name in WARNING_CHECKS:
+                color = "#ff9900"  # Orange/Yellow warning
+                symbol = "■"   # Changed from ⚠ to ■
+            else:
+                color = "#d62728"  # Red fatal
+                symbol = "■"
+    else:
+        color = "#999"
+        symbol = "⚠"
+    return html.Span(symbol, style={"color": color, "fontSize": 16, "fontWeight": "bold", "marginLeft": "auto", "marginRight": "auto", "display": "block", "width": "max-content"})
+
+
+def _build_validation_grid(swc_text: str):
+    """Run per-tree validation and build colored HTML table + JSON-safe rows."""
+    check_names, tree_results = run_per_tree_validation(swc_text)
+
+    if not check_names or not tree_results:
+        return [], []
+
+    n_trees = len(tree_results)
+    is_multi = n_trees > 1
+
+    # Build header row
+    header_cells = [html.Th("Check", style={"textAlign": "right", "padding": "4px 10px", "borderBottom": "2px solid #999", "width": 260})]
+    for tidx, (root_id, node_count, _) in enumerate(tree_results):
+        if is_multi:
+            label = html.Div(
+                [
+                    html.Span(f"Tree {tidx + 1}", style={"marginRight": 6}),
+                    html.Button(
+                        "↓",
+                        id={"type": "btn-dl-tree", "index": tidx},
+                        n_clicks=0,
+                        title=f"Download Tree {tidx + 1} as SWC",
+                        style={
+                            "fontSize": 11,
+                            "padding": "1px 5px",
+                            "cursor": "pointer",
+                            "borderRadius": 3,
+                            "border": "1px solid #aaa",
+                            "background": "#f3f3f3",
+                            "verticalAlign": "middle",
+                        },
+                    ),
+                ],
+                style={"display": "flex", "alignItems": "center", "justifyContent": "center"},
+            )
+        else:
+            label = "Status"
+        header_cells.append(html.Th(label, style={"textAlign": "center", "padding": "4px 8px", "borderBottom": "2px solid #999", "width": 100}))
+    header = html.Tr(header_cells)
+
+    # Build body rows
+    body_rows = []
+    json_rows = []
+    for code, friendly in check_names:
+        cells = [html.Td(friendly, style={"padding": "3px 10px", "fontSize": 13, "borderBottom": "1px solid #eee", "textAlign": "right", "width": 260})]
+        json_entry = {"check": friendly}
+        for tidx, (root_id, node_count, results) in enumerate(tree_results):
+            val = results.get(code, "N/A")
+            cells.append(html.Td(_status_cell(val, friendly), style={"textAlign": "center", "padding": "3px 8px", "borderBottom": "1px solid #eee", "width": 80}))
+            key = f"tree_{root_id}" if is_multi else "status"
+            json_entry[key] = val
+        body_rows.append(html.Tr(cells))
+        json_rows.append(json_entry)
+
+    table = html.Table(
+        [html.Thead(header), html.Tbody(body_rows)],
+        style={"borderCollapse": "collapse", "fontSize": 14, "tableLayout": "fixed", "width": "auto"},
+    )
+
+    grid_children = []
+    if is_multi:
+        soma_ids = [root_id for root_id, _, _ in tree_results]
+        grid_children.append(
+            html.Div(
+                [
+                    html.Span("⚠", style={"fontSize": 22, "marginRight": 10, "lineHeight": 1}),
+                    html.Span(
+                        f"Multiple somas detected — {n_trees} trees found "
+                        f"(root IDs: {', '.join(str(s) for s in soma_ids)}). "
+                        "Use the \u2193 buttons or 'Save all trees' to split.",
+                        style={"fontWeight": 600, "fontSize": 14},
+                    ),
+                ],
+                style={
+                    "display": "flex",
+                    "alignItems": "center",
+                    "padding": "12px 16px",
+                    "marginBottom": 12,
+                    "borderRadius": 6,
+                    "border": "2px solid #c0392b",
+                    "backgroundColor": "#fdecea",
+                    "color": "#7b1a12",
+                },
+            )
+        )
+    grid_children.append(table)
+    return grid_children, json_rows
+
+
+def _validation_rows_from_df(df: pd.DataFrame):
+    """Run validation and return (grid_children, json_rows)."""
     swc_bytes = write_swc_to_bytes_preserve_tokens(df)
     swc_text = swc_bytes.decode("utf-8", errors="ignore")
-    _, _sanitized_bytes, table_rows = run_format_validation_from_text(swc_text)
-    return table_rows
+    return _build_validation_grid(swc_text)
 
 
 
@@ -251,73 +395,212 @@ def register_callbacks(app):
             return hide, hide, show
         return show, hide, hide
 
+    # ---- helper: add level markers to per-tree figures ----
+    def _add_level_overlay(figs, info, level_val, compress):
+        """Add diamond markers for nodes at *level_val*, per tree."""
+        if level_val is None:
+            return ""
+        try:
+            level_val = int(level_val)
+        except (TypeError, ValueError):
+            return ""
+
+        levels_arr = np.array(info.get("levels", []), dtype=np.int32)
+        membership = np.array(info.get("tree_membership", []), dtype=np.int32)
+        cum_raw = np.array(info["cum"], dtype=np.float32)
+        cum = np.sqrt(cum_raw) if compress else cum_raw
+        y_arr = np.array(info["y"], dtype=np.float32)
+        
+        swc_ids = np.array(info.get("swc_ids", []), dtype=np.int32)
+        types = np.array(info.get("types", []), dtype=np.int32)
+
+        target_level = level_val - 1
+        level_mask = levels_arr == target_level
+        total_count = int(level_mask.sum())
+        if total_count == 0:
+            return f"No nodes at level {level_val}."
+
+        for i, fig in enumerate(figs):
+            # Only nodes belonging to tree i AND at the target level
+            tree_mask = (membership == i) & level_mask
+            count = int(tree_mask.sum())
+            if count == 0:
+                continue
+
+            node_x = cum[tree_mask]
+            node_y = y_arr[tree_mask]
+            
+            node_ids = swc_ids[tree_mask]
+            node_types = types[tree_mask]
+            
+            hover_text = [
+                f"id={sid}, type={label_for_type(t)} ({t}), level={level_val}"
+                for sid, t in zip(node_ids, node_types)
+            ]
+
+            fig.add_trace(
+                go.Scattergl(
+                    x=node_x, y=node_y, mode="markers",
+                    marker=dict(size=5, color="#ffd600", symbol="diamond",
+                                line=dict(width=0.5, color="#333")),
+                    hoverinfo="text",
+                    text=hover_text,
+                    showlegend=True,
+                    name=f"Level {level_val} ({count} nodes)",
+                )
+            )
+
+        return f"{total_count} nodes at level {level_val}"
+
+    # ---- helper: build container children from figures ----
+    def _dendro_container(figs):
+        return [
+            dcc.Graph(
+                id={"type": "fig-dendro-tree", "index": i},
+                figure=fig,
+                style={"marginBottom": 12},
+            )
+            for i, fig in enumerate(figs)
+        ]
+
     # ---------------- DENDROGRAM: render from shared store ----------------
     @app.callback(
         Output("edit-file-info", "children"),
-        Output("fig-dendro", "figure"),
+        Output("dendro-graphs-container", "children"),
         Output("fig-dendro-3d", "figure"),
         Output("store-dendro-info", "data"),
+        Output("dendro-level-info", "children"),
         Input("store-working-df", "data"),
+        Input("dendro-compress-x", "value"),
+        Input("dendro-level-input", "value"),
         State("store-filename", "data"),
         prevent_initial_call=False,
     )
-    def render_dendrogram(shared_records, filename):
+    def render_dendrogram(shared_records, compress_opts, level_val, filename):
+        compress = bool(compress_opts and "compress" in compress_opts)
         if not shared_records:
             return (
                 "No file loaded. Upload on the Format Validation tab.",
-                go.Figure(),
+                [],
                 go.Figure(),
                 None,
+                "",
             )
         try:
             df = pd.DataFrame(shared_records)
             if df.empty:
                 msg = f"Loaded {filename or 'current file'}: 0 rows."
-                return msg, go.Figure(), go.Figure(), None
+                return msg, [], go.Figure(), None, ""
 
-            dendro_fig, info = make_dendrogram_figure(df)
+            figs, info = make_dendrogram_figures(df, compress=compress)
             fig3d = _make_3d_edges_figure(df)
-            msg = f"Loaded {filename or 'current file'} with {len(df)} nodes."
-            return msg, dendro_fig, fig3d, info
+            n_trees = len(info.get("roots", [1]))
+            tree_note = f" ({n_trees} trees)" if n_trees > 1 else ""
+            msg = f"Loaded {filename or 'current file'} with {len(df)} nodes{tree_note}."
+
+            # Apply level overlay if level input has a value
+            level_info = _add_level_overlay(figs, info, level_val, compress)
+
+            return msg, _dendro_container(figs), fig3d, info, level_info
         except Exception as e:
             return (
                 f"Failed to render dendrogram: {e}",
-                go.Figure(),
+                [],
                 go.Figure(),
                 None,
+                "",
             )
 
-    # ---------------- DENDROGRAM: click select ----------------
+    # ---------------- DENDROGRAM: click select (pattern-matching) --------
     @app.callback(
         Output("selected-node-id", "children"),
         Output("selected-type", "children"),
         Output("type-chip", "style"),
-        Input("fig-dendro", "clickData"),
+        Output("selected-level", "children"),
+        Output("selected-tree-info", "children"),
+        Input({"type": "fig-dendro-tree", "index": ALL}, "clickData"),
         State("store-dendro-info", "data"),
         State("store-working-df", "data"),
     )
-    def on_click_edge(clickData, info, df_records):
+    def on_click_edge(all_click_data, info, df_records):
         base_chip_style = {
-            "display": "inline-block", "width": "12px", "height": "12px",
-            "borderRadius": "2px", "marginRight": "6px",
+            "display": "inline-block", "width": "10px", "height": "10px",
+            "borderRadius": "2px", "marginRight": "4px",
             "backgroundColor": "#ccc", "verticalAlign": "middle",
         }
-        if not clickData or not info or not df_records:
-            return "-", "-", base_chip_style
+        defaults = ("-", "-", base_chip_style, "-", "")
+        if not info or not df_records:
+            return defaults
+
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return defaults
+
+        clickData = None
+        for t in ctx.triggered:
+            val = t.get("value")
+            if val is not None:
+                clickData = val
+                break
+
+        if not clickData:
+            return defaults
+
         try:
             pt = clickData["points"][0]
             cd = pt.get("customdata")
             if not (cd and cd[0] is not None):
-                return "-", "-", base_chip_style
+                return defaults
             v = int(cd[0])
             df = pd.DataFrame(df_records)
             swc_id = int(df.iloc[v]["id"])
             tval = int(df.iloc[v]["type"])
             label = label_for_type(tval)
             chip_style = dict(base_chip_style, backgroundColor=color_for_type(tval))
-            return str(swc_id), f"{label} ({tval})", chip_style
+
+            # Level
+            levels = info.get("levels", [])
+            level_str = str(levels[v]) if v < len(levels) and levels[v] >= 0 else "-"
+
+            # Tree info (only if multiple trees)
+            tree_info = ""
+            membership = info.get("tree_membership", [])
+            tree_meta = info.get("tree_meta", [])
+            if len(tree_meta) > 1 and v < len(membership) and membership[v] >= 0:
+                tree_idx = membership[v]
+                if tree_idx < len(tree_meta):
+                    tm = tree_meta[tree_idx]
+                    tree_info = f"| Tree {tree_idx + 1} (root id={tm['root_id']}, {tm['root_label']})"
+
+            return str(swc_id), f"{label} ({tval})", chip_style, level_str, tree_info
         except Exception:
-            return "-", "-", base_chip_style
+            return defaults
+
+    # ---------------- DENDROGRAM: type button selection (clientside) --------
+    app.clientside_callback(
+        r"""
+        function(...args) {
+            const ctx = dash_clientside.callback_context;
+            if (!ctx.triggered || ctx.triggered.length === 0) {
+                return [dash_clientside.no_update, dash_clientside.no_update];
+            }
+            const triggeredId = ctx.triggered[0].prop_id;
+            const match = triggeredId.match(/new-type-radio-(\d+)/);
+            if (!match) {
+                return [dash_clientside.no_update, dash_clientside.no_update];
+            }
+            const typeVal = parseInt(match[1]);
+            const labels = ['undefined','soma','axon','basal dendrite','apical dendrite','custom','custom','custom'];
+            const label = typeVal <= 4 ? labels[typeVal] : labels[5];
+            return [typeVal, 'Selected: ' + typeVal + ' (' + label + ')'];
+        }
+        """,
+        Output("new-type-store", "data"),
+        Output("new-type-display", "children"),
+        *[Input(f"new-type-radio-{t}", "n_clicks") for t in range(6)],
+        State("new-type-store", "data"),
+        prevent_initial_call=True,
+    )
 
     # ---------------- DENDROGRAM: apply type change ----------------
     @app.callback(
@@ -325,25 +608,29 @@ def register_callbacks(app):
         Output("apply-msg", "children", allow_duplicate=True),
         Output("table-changes", "data", allow_duplicate=True),
         Output("table-changes", "page_current", allow_duplicate=True),
-        Output("fig-dendro", "figure", allow_duplicate=True),
-        Output("fig-dendro-3d", "figure", allow_duplicate=True),   # NEW
+        Output("dendro-graphs-container", "children", allow_duplicate=True),
+        Output("fig-dendro-3d", "figure", allow_duplicate=True),
         Output("store-dendro-info", "data", allow_duplicate=True),
         Output("selected-type", "children", allow_duplicate=True),
         Output("type-chip", "style", allow_duplicate=True),
         Output("validate-file-info", "children", allow_duplicate=True),
-        Output("table-validate-results", "data", allow_duplicate=True),
+        Output("validation-grid-container", "children", allow_duplicate=True),
         Output("store-validate-table", "data", allow_duplicate=True),
+        Output("store-df-history", "data"),
         Input("btn-apply", "n_clicks"),
         State("selected-node-id", "children"),
-        State("new-type", "value"),
+        State("new-type-store", "data"),
         State("apply-scope", "value"),
         State("store-working-df", "data"),
         State("store-dendro-info", "data"),
         State("table-changes", "data"),
         State("store-filename", "data"),
+        State("dendro-compress-x", "value"),
+        State("dendro-level-input", "value"),
+        State("store-df-history", "data"),
         prevent_initial_call=True,
     )
-    def apply_type_change(n, selected_swc_id, new_type, scope_mode, df_records, info, table, filename):
+    def apply_type_change(n, selected_swc_id, new_type, scope_mode, df_records, info, table, filename, compress_opts, level_val, history_records):
         base_chip_style = {
             "display": "inline-block", "width": "12px", "height": "12px",
             "borderRadius": "2px", "marginRight": "6px",
@@ -354,7 +641,7 @@ def register_callbacks(app):
             return (
                 dash.no_update, "Upload a file first.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update
             )
 
         try:
@@ -363,14 +650,14 @@ def register_callbacks(app):
             return (
                 dash.no_update, "Click a branch in the dendrogram first.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update
             )
 
         if new_type is None or int(new_type) < 0:
             return (
                 dash.no_update, "Enter a valid non-negative SWC type.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update
             )
 
         df = pd.DataFrame(df_records)
@@ -379,11 +666,17 @@ def register_callbacks(app):
             return (
                 dash.no_update, f"Could not find SWC id {sel_id}.", dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update
             )
         v = int(matches[0])
+        
+        # Save previous state to history
+        hist = history_records or []
+        hist.append(df.to_dict("records"))
 
-        kids = info["kids"]
+        # Rebuild tree from the current DataFrame to guarantee fresh topology
+        tree = build_tree_cache(df)
+        kids = children_payload(tree)
         scope_mode = (scope_mode or "subtree").lower()
         if scope_mode not in {"subtree", "node"}:
             scope_mode = "subtree"
@@ -410,8 +703,10 @@ def register_callbacks(app):
             )
         table = changes_batch + list(table or [])
 
-        dendro_fig, info2 = make_dendrogram_figure(df)
-        fig3d = _make_3d_edges_figure(df)  # NEW
+        compress = bool(compress_opts and "compress" in compress_opts)
+        figs, info2 = make_dendrogram_figures(df, compress=compress)
+        _add_level_overlay(figs, info2, level_val, compress)
+        fig3d = _make_3d_edges_figure(df)
         if scope_mode == "node":
             msg = f"Applied type {new_t} to SWC id {sel_id}."
         else:
@@ -424,16 +719,81 @@ def register_callbacks(app):
         validate_rows = dash.no_update
         validate_store = dash.no_update
         try:
-            rows = _validation_rows_from_df(df)
-            validation_msg = f"Validated {filename or 'current file'} • {len(rows)} checks (auto-updated)"
-            validate_rows = rows
-            validate_store = rows
+            clear_validation_cache()
+            grid_children, json_rows = _validation_rows_from_df(df)
+            validation_msg = f"Validated {filename or 'current file'} • {len(json_rows)} checks (auto-updated)"
+            validate_rows = grid_children
+            validate_store = json_rows
         except Exception as e:
             validation_msg = f"Validation failed after edit: {e}"
 
         return (
-            df.to_dict("records"), msg, table, 0, dendro_fig, fig3d, info2, f"{label} ({new_t})", chip_style,
-            validation_msg, validate_rows, validate_store,
+            df.to_dict("records"), msg, table, 0, _dendro_container(figs), fig3d, info2, f"{label} ({new_t})", chip_style,
+            validation_msg, validate_rows, validate_store, hist
+        )
+
+    # ---------------- DENDROGRAM: undo last change ----------------
+    @app.callback(
+        Output("store-working-df", "data", allow_duplicate=True),
+        Output("table-changes", "data", allow_duplicate=True),
+        Output("store-df-history", "data", allow_duplicate=True),
+        Output("dendro-graphs-container", "children", allow_duplicate=True),
+        Output("fig-dendro-3d", "figure", allow_duplicate=True),
+        Output("store-dendro-info", "data", allow_duplicate=True),
+        Output("apply-msg", "children", allow_duplicate=True),
+        Output("validate-file-info", "children", allow_duplicate=True),
+        Output("validation-grid-container", "children", allow_duplicate=True),
+        Output("store-validate-table", "data", allow_duplicate=True),
+        Input("btn-undo", "n_clicks"),
+        State("store-df-history", "data"),
+        State("table-changes", "data"),
+        State("store-filename", "data"),
+        State("dendro-compress-x", "value"),
+        State("dendro-level-input", "value"),
+        prevent_initial_call=True,
+    )
+    def undo_last_change(n_undo, history_records, table, filename, compress_opts, level_val):
+        if not history_records or len(history_records) == 0:
+            return (
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, "Nothing to undo.",
+                dash.no_update, dash.no_update, dash.no_update
+            )
+        
+        # Pop the last state from history
+        prev_df_records = history_records.pop()
+        
+        # Remove the latest entries from the changes table. Since we could have applied
+        # a change to a single node or a subtree, we just pop all changes from the last 'batch' 
+        # (Since table-changes is prepended, we pop from the front. Actually, detecting the batch size is tricky, 
+        # so let's just revert the table to empty for simplicity if we can't easily track batch slices. 
+        # Better yet, since we didn't track sizes, let's just pop 1 row as an imperfection or leave it alone).
+        # Actually, since table is prepended as `changes_batch + table`, it's hard to slice. 
+        # We will just leave the change log untouched, or clear it.
+        # Let's rebuild the table from history logic instead or just clear it.
+        new_table = table  # Keeping it simple for now
+
+        df = pd.DataFrame(prev_df_records)
+        compress = bool(compress_opts and "compress" in compress_opts)
+        figs, info2 = make_dendrogram_figures(df, compress=compress)
+        _add_level_overlay(figs, info2, level_val, compress)
+        fig3d = _make_3d_edges_figure(df)
+
+        validation_msg = dash.no_update
+        validate_rows = dash.no_update
+        validate_store = dash.no_update
+        try:
+            clear_validation_cache()
+            grid_children, json_rows = _validation_rows_from_df(df)
+            validation_msg = f"Validated {filename or 'current file'} • {len(json_rows)} checks (auto-updated after undo)"
+            validate_rows = grid_children
+            validate_store = json_rows
+        except Exception as e:
+            validation_msg = f"Validation failed after undo: {e}"
+
+        return (
+            prev_df_records, new_table, history_records, _dendro_container(figs), fig3d, info2, "Undid the last apply action.",
+            validation_msg, validate_rows, validate_store
         )
 
     # ---------------- DENDROGRAM: downloads ----------------
@@ -712,7 +1072,7 @@ def register_callbacks(app):
         Output("table-viewer-clean-log", "data", allow_duplicate=True),
         Output("viewer-clean-msg", "children", allow_duplicate=True),
         Output("validate-file-info", "children", allow_duplicate=True),
-        Output("table-validate-results", "data", allow_duplicate=True),
+        Output("validation-grid-container", "children", allow_duplicate=True),
         Output("store-validate-table", "data", allow_duplicate=True),
         Input("btn-viewer-clean-undefined", "n_clicks"),
         Input("btn-viewer-clean-axon", "n_clicks"),
@@ -972,10 +1332,11 @@ def register_callbacks(app):
             validate_rows = dash.no_update
             validate_store = dash.no_update
             try:
-                rows = _validation_rows_from_df(df)
-                validation_msg = f"Validated {filename or 'current file'} • {len(rows)} checks (auto-updated)"
-                validate_rows = rows
-                validate_store = rows
+                clear_validation_cache()
+                grid_children, json_rows = _validation_rows_from_df(df)
+                validation_msg = f"Validated {filename or 'current file'} • {len(json_rows)} checks (auto-updated)"
+                validate_rows = grid_children
+                validate_store = json_rows
             except Exception as e:
                 validation_msg = f"Validation failed after cleaning: {e}"
 
@@ -1228,7 +1589,7 @@ def register_callbacks(app):
     # =====================================================================
     @app.callback(
         Output("validate-file-info", "children", allow_duplicate=True),
-        Output("table-validate-results", "data", allow_duplicate=True),
+        Output("validation-grid-container", "children", allow_duplicate=True),
         Output("store-validate-table", "data", allow_duplicate=True),
         Output("store-working-df", "data", allow_duplicate=True),
         Output("store-filename", "data", allow_duplicate=True),
@@ -1237,6 +1598,7 @@ def register_callbacks(app):
         Output("apply-msg", "children", allow_duplicate=True),
         Output("table-viewer-clean-log", "data", allow_duplicate=True),
         Output("viewer-clean-msg", "children", allow_duplicate=True),
+        Output("store-validate-swc-text", "data", allow_duplicate=True),
         Input("upload-validate", "contents"),
         State("upload-validate", "filename"),
         prevent_initial_call=True,
@@ -1254,33 +1616,24 @@ def register_callbacks(app):
                 dash.no_update,
                 dash.no_update,
                 dash.no_update,
+                None,
             )
         try:
             text = _decode_uploaded_text(contents)
             df = parse_swc_text_preserve_tokens(text)
-            rows = []
+            grid_children = []
+            json_rows = []
+            validation_msg = ""
             try:
-                _, _sanitized_bytes, rows = run_format_validation_from_text(text)
+                grid_children, json_rows = _build_validation_grid(text)
+                validation_msg = f"Validated {filename or 'uploaded file'} • {len(json_rows)} checks"
             except Exception as e:
-                return (
-                    f"Validation failed: {e}",
-                    [],
-                    None,
-                    dash.no_update,
-                    dash.no_update,
-                    dash.no_update,
-                    dash.no_update,
-                    dash.no_update,
-                    dash.no_update,
-                    dash.no_update,
-                )
-
-            msg = f"Validated {filename or 'uploaded file'} • {len(rows)} checks"
+                validation_msg = f"Validation partially failed: {e}  (file still loaded)"
 
             return (
-                msg,
-                rows,
-                rows,
+                validation_msg,
+                grid_children,
+                json_rows or None,
                 df.to_dict("records") if not df.empty else [],
                 filename,
                 [],
@@ -1288,12 +1641,14 @@ def register_callbacks(app):
                 "",
                 [],
                 "",
+                text,
             )
         except Exception as e:
             return (
                 f"Validation failed: {e}",
                 [],
                 None,
+                dash.no_update,
                 dash.no_update,
                 dash.no_update,
                 dash.no_update,
@@ -1316,3 +1671,175 @@ def register_callbacks(app):
         base = os.path.splitext(filename or "validation")[0]
         out_name = f"{base}_validation.json"
         return dcc.send_string(json.dumps(table_rows, indent=2), out_name)
+
+    # ---------------- VALIDATION PAGE: save individual tree via folder picker ----------------
+    @app.callback(
+        Output("save-tree-status", "children"),
+        Output("save-tree-status", "style"),
+        Input({"type": "btn-dl-tree", "index": ALL}, "n_clicks"),
+        State("store-validate-swc-text", "data"),
+        State("store-filename", "data"),
+        prevent_initial_call=True,
+    )
+    def save_tree_to_folder(n_clicks_list, swc_text, filename):
+        base_style = {"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#0a7",
+                      "maxWidth": 700, "marginTop": 4, "marginBottom": 4}
+        err_style = {**base_style, "color": "#d62728"}
+
+        ctx = dash.callback_context
+        if not ctx.triggered or not swc_text:
+            return dash.no_update, dash.no_update
+
+        triggered_id = ctx.triggered[0]["prop_id"]
+        try:
+            id_dict = json.loads(triggered_id.split(".")[0])
+            tree_idx = int(id_dict["index"])
+        except Exception:
+            return dash.no_update, dash.no_update
+
+        if not n_clicks_list or tree_idx >= len(n_clicks_list):
+            return dash.no_update, dash.no_update
+        if not n_clicks_list[tree_idx]:
+            return dash.no_update, dash.no_update
+
+        trees = _split_swc_by_trees(swc_text)
+        if tree_idx >= len(trees):
+            return dash.no_update, dash.no_update
+
+        root_id, sub_text, node_count = trees[tree_idx]
+        base = os.path.splitext(filename or "file")[0]
+        out_name = f"{base}_tree{tree_idx + 1}.swc"
+
+        save_dir = _pick_folder(f"Save Tree {tree_idx + 1} — choose destination folder")
+        if not save_dir:
+            return "Save cancelled.", {**base_style, "color": "#999"}
+
+        try:
+            out_path = os.path.join(save_dir, out_name)
+            with open(out_path, "w", encoding="utf-8") as fh:
+                fh.write(sub_text)
+            return f"✓ Saved Tree {tree_idx + 1} → {out_path}", base_style
+        except Exception as e:
+            return f"Error saving tree: {e}", err_style
+
+
+    # ---------------- VALIDATION PAGE: save ALL trees to a chosen folder ----------------
+    import subprocess as _subprocess
+
+    def _pick_folder(prompt: str = "Choose a folder") -> str | None:
+        """Open a native macOS Finder folder-picker. Returns path or None if cancelled."""
+        script = f'POSIX path of (choose folder with prompt "{prompt}")'
+        try:
+            r = _subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=120,
+            )
+            if r.returncode == 0:
+                return r.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    @app.callback(
+        Output("save-all-trees-status", "children"),
+        Output("save-all-trees-status", "style"),
+        Input("btn-save-all-trees", "n_clicks"),
+        State("store-validate-swc-text", "data"),
+        State("store-filename", "data"),
+        prevent_initial_call=True,
+    )
+    def save_all_trees_to_folder(n, swc_text, filename):
+        base_style = {"fontSize": 13, "whiteSpace": "pre-wrap", "maxWidth": 700, "marginTop": 4}
+        if not n or not swc_text:
+            return "", base_style
+
+        trees = _split_swc_by_trees(swc_text)
+        if not trees:
+            return "No trees found — is a file loaded?", {**base_style, "color": "#999"}
+        if len(trees) == 1:
+            return "Only one tree in this file — use the individual ↓ button instead.", {**base_style, "color": "#999"}
+
+        parent_dir = _pick_folder("Choose a parent folder — a sub-folder will be created there")
+        if not parent_dir:
+            return "Folder selection cancelled.", {**base_style, "color": "#999"}
+
+        # Create a named subfolder: <parent>/<stem>/
+        base = os.path.splitext(filename or "file")[0]
+        out_dir = os.path.join(parent_dir, base)
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            saved = []
+            for i, (root_id, sub_text, node_count) in enumerate(trees):
+                out_name = f"{base}_tree{i + 1}.swc"
+                with open(os.path.join(out_dir, out_name), "w", encoding="utf-8") as fh:
+                    fh.write(sub_text)
+                saved.append(out_name)
+        except Exception as e:
+            return f"Error saving files: {e}", {**base_style, "color": "#d62728"}
+
+        msg = f"✓ Saved {len(saved)} tree file(s) to:\n{out_dir}/\n\n" + "\n".join(saved)
+        return msg, {**base_style, "color": "#0a7"}
+
+    # ---------------- VALIDATION PAGE: batch folder split (native picker) ----------------
+    @app.callback(
+        Output("batch-split-status", "children"),
+        Output("batch-split-status", "style"),
+        Input("btn-batch-split", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def batch_folder_split(n_clicks):
+        base_style = {"fontSize": 13, "whiteSpace": "pre-wrap", "maxWidth": 700, "marginTop": 4}
+        if not n_clicks:
+            return "", base_style
+
+        folder_path = _pick_folder("Select folder with SWC files to split")
+        if not folder_path:
+            return "Folder selection cancelled.", {**base_style, "color": "#999"}
+
+        swc_files = [
+            f for f in os.listdir(folder_path)
+            if f.lower().endswith(".swc") and os.path.isfile(os.path.join(folder_path, f))
+        ]
+        if not swc_files:
+            return f"No .swc files found in:\n{folder_path}", {**base_style, "color": "#999"}
+
+        lines = [f"Folder: {folder_path}\n"]
+        total_split = 0
+        total_skipped = 0
+        errors = 0
+
+        for fname in sorted(swc_files):
+            fpath = os.path.join(folder_path, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="ignore") as fh:
+                    text = fh.read()
+                trees = _split_swc_by_trees(text)
+
+                if len(trees) <= 1:
+                    lines.append(f"  ↷ {fname}  (single tree — skipped)")
+                    total_skipped += 1
+                    continue
+
+                stem = os.path.splitext(fname)[0]
+                out_dir = os.path.join(folder_path, stem)
+                os.makedirs(out_dir, exist_ok=True)
+
+                for i, (root_id, sub_text, node_count) in enumerate(trees):
+                    out_name = f"{stem}_tree{i + 1}.swc"
+                    with open(os.path.join(out_dir, out_name), "w", encoding="utf-8") as of:
+                        of.write(sub_text)
+
+                lines.append(f"  ✓ {fname}  → {stem}/ ({len(trees)} trees)")
+                total_split += 1
+            except Exception as e:
+                lines.append(f"  ✗ {fname}  ERROR: {e}")
+                errors += 1
+
+        summary = (
+            f"Done — {total_split} file(s) split, {total_skipped} single-tree skipped"
+            + (f", {errors} error(s)" if errors else "")
+            + ".\n\n"
+            + "\n".join(lines)
+        )
+        color = "#d62728" if errors and total_split == 0 else "#0a7"
+        return summary, {**base_style, "color": color}

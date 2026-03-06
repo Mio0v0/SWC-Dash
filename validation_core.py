@@ -67,11 +67,15 @@ def _selected_checks() -> Iterable[Tuple[str, Any, bool]]:
             continue
         yield (n, f, nf)
 
+import warnings
+
 def _run_one_check(name, func, needs_nf, morph):
     try:
-        if needs_nf:
-            return name, bool(func(morph, neurite_filter=None))
-        return name, bool(func(morph))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if needs_nf:
+                return name, bool(func(morph, neurite_filter=None))
+            return name, bool(func(morph))
     except Exception as e:
         return name, f"ERROR: {e}"
 
@@ -126,6 +130,10 @@ def _sha1(data: bytes) -> str:
 _CACHE: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
 # key -> (results_dict, rows)
 
+def clear_cache() -> None:
+    """Clear the validation results cache (e.g. after edits)."""
+    _CACHE.clear()
+
 # --------- CUSTOM ORDERING FOR TABLE ROWS ----------
 # Put these first (exact order), then all others follow in their usual alpha order.
 _FIRST_SIX = [
@@ -170,31 +178,54 @@ def run_format_validation_from_text(swc_text: str):
             results, rows = hit
             return results, sanitized_bytes, rows
 
-        # Build morphology
-        raw = morphio.Morphology(
-            tmp_path,
-            options=morphio.Option.allow_unifurcated_section_change
-        )
-        morph = Morphology(raw)
-
-        # Run the fixed check set in parallel
+        # Build morphology and run NeuroM checks
         results: Dict[str, Any] = {}
-        max_workers = min(8, (os.cpu_count() or 2))
-        selected = list(_selected_checks())
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futs = [ex.submit(_run_one_check, n, f, nf, morph) for (n, f, nf) in selected]
-            for fut in as_completed(futs):
-                name, value = fut.result()
-                results[name] = value
-
-        # Custom: has_soma (quick)
         try:
-            has_soma_points = hasattr(raw, "soma") and getattr(raw.soma, "points", None) is not None \
-                              and len(raw.soma.points) > 0
-        except Exception:
-            has_soma_points = False
-        has_soma_by_type = bool(np.any(arr["type"] == 1))
-        results["has_soma"] = bool(has_soma_points or has_soma_by_type)
+            raw = morphio.Morphology(
+                tmp_path,
+                options=morphio.Option.allow_unifurcated_section_change
+            )
+            morph = Morphology(raw)
+
+            # Run the fixed check set in parallel
+            max_workers = min(8, (os.cpu_count() or 2))
+            selected = list(_selected_checks())
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futs = [ex.submit(_run_one_check, n, f, nf, morph) for (n, f, nf) in selected]
+                for fut in as_completed(futs):
+                    name, value = fut.result()
+                    results[name] = value
+
+            # Custom: has_soma (quick)
+            try:
+                has_soma_points = hasattr(raw, "soma") and getattr(raw.soma, "points", None) is not None \
+                                  and len(raw.soma.points) > 0
+            except Exception:
+                has_soma_points = False
+            has_soma_by_type = bool(np.any(arr["type"] == 1))
+            results["has_soma"] = bool(has_soma_points or has_soma_by_type)
+
+        except Exception as morph_err:
+            # MorphIO could not load the file (e.g. multiple somas).
+            # Populate what we CAN determine from the raw array alone.
+            results["has_soma"] = bool(np.any(arr["type"] == 1))
+            # Mark all NeuroM checks we would have run as errors
+            for name, _func, _nf in _selected_checks():
+                if name not in results:
+                    results[name] = f"ERROR: {morph_err}"
+
+        # Custom overrides: has_axon / has_basal_dendrite / has_apical_dendrite
+        # NeuroM's default checks use MorphIO's neurite classification (based on
+        # root-section type), so edits to intermediate node types are invisible.
+        # Override with direct type-column checks to always reflect current data.
+        results["has_axon"] = bool(np.any(arr["type"] == 2))
+        results["has_basal_dendrite"] = bool(np.any(arr["type"] == 3))
+        results["has_apical_dendrite"] = bool(np.any(arr["type"] == 4))
+
+        # Custom override: has_no_dangling_branch
+        # User requested: True as long as there is only one node within the tree that has -1 as its parent. False otherwise.
+        roots_count = np.sum(arr["parent"] == -1)
+        results["has_no_dangling_branch"] = bool(roots_count == 1)
 
         # Build human-readable rows with the new custom ordering
         rows_unsorted = [(code, _friendly_label(code), status) for code, status in results.items()]
@@ -210,3 +241,151 @@ def run_format_validation_from_text(swc_text: str):
             os.remove(tmp_path)
         except FileNotFoundError:
             pass
+
+
+def _split_swc_by_trees(swc_text: str):
+    """Split SWC text into per-tree subsets via BFS from each root.
+    Non-soma trees (dangling branches) are grouped with the nearest soma
+    tree by Euclidean distance, without modifying parent values.
+    Returns list of (root_id, sub_swc_text, node_count) sorted by root_id ascending.
+    """
+    arr = _load_swc_to_array(swc_text)
+    if arr.size == 0:
+        return []
+
+    ids = arr["id"]
+    types = arr["type"]
+    parents = arr["parent"]
+    xyz = np.column_stack((arr["x"], arr["y"], arr["z"])).astype(np.float64)
+
+    id_to_idx = {int(ids[i]): i for i in range(len(ids))}
+
+    # Find roots (parent < 0)
+    roots = [int(ids[i]) for i in range(len(ids)) if parents[i] < 0]
+
+    # Build children map
+    children_map = {}
+    for i in range(len(ids)):
+        pid = int(parents[i])
+        if pid >= 0:
+            children_map.setdefault(pid, []).append(int(ids[i]))
+
+    # BFS from each root to classify trees
+    soma_trees = []   # [(root_id, member_set)]
+    dangling_trees = []  # [(root_id, member_set)]
+
+    for root_id in sorted(roots):
+        members = set()
+        queue = [root_id]
+        has_soma = False
+        while queue:
+            nid = queue.pop(0)
+            if nid in members:
+                continue
+            members.add(nid)
+            idx = id_to_idx.get(nid)
+            if idx is not None and int(types[idx]) == 1:
+                has_soma = True
+            for child in children_map.get(nid, []):
+                queue.append(child)
+
+        if has_soma:
+            soma_trees.append((root_id, members))
+        else:
+            dangling_trees.append((root_id, members))
+
+    # Group dangling trees with nearest soma tree
+    if soma_trees and dangling_trees:
+        # Collect soma node positions for distance computation
+        soma_node_indices = [i for i in range(len(ids)) if int(types[i]) == 1]
+        soma_xyz = xyz[soma_node_indices]
+        soma_ids_arr = ids[soma_node_indices]
+
+        # Map each soma node to which soma tree it belongs to
+        soma_to_tree_idx = {}
+        for tidx, (_, members) in enumerate(soma_trees):
+            for sid in soma_ids_arr:
+                if int(sid) in members:
+                    soma_to_tree_idx[int(sid)] = tidx
+
+        for _droot_id, dmembers in dangling_trees:
+            # Use the root node of the dangling tree for distance
+            droot_idx = id_to_idx[_droot_id]
+            droot_xyz = xyz[droot_idx]
+            dists = np.linalg.norm(soma_xyz - droot_xyz, axis=1)
+            nearest_soma_idx = int(np.argmin(dists))
+            nearest_soma_id = int(soma_ids_arr[nearest_soma_idx])
+            target_tree_idx = soma_to_tree_idx.get(nearest_soma_id, 0)
+            # Add dangling members to the soma tree
+            soma_trees[target_tree_idx][1].update(dmembers)
+
+    # Build output from (possibly augmented) soma trees
+    # If there are no soma trees at all, fall back to treating everything as-is
+    tree_groups = soma_trees if soma_trees else [(rid, members) for rid, members in [(r, set()) for r in roots]]
+    if not soma_trees:
+        # Fallback: original behavior if no soma trees exist
+        tree_groups = []
+        for root_id in sorted(roots):
+            members = set()
+            queue = [root_id]
+            while queue:
+                nid = queue.pop(0)
+                if nid in members:
+                    continue
+                members.add(nid)
+                for child in children_map.get(nid, []):
+                    queue.append(child)
+            tree_groups.append((root_id, members))
+
+    trees = []
+    for root_id, members in tree_groups:
+        sub_rows = []
+        for i in range(len(ids)):
+            if int(ids[i]) in members:
+                sub_rows.append(arr[i])
+
+        if not sub_rows:
+            continue
+
+        sub_arr = np.array(sub_rows, dtype=_SWCTYPE)
+        tmp_path = _write_array_to_tmp_swc(sub_arr)
+        try:
+            with open(tmp_path, "r") as f:
+                sub_text = f.read()
+        finally:
+            try:
+                os.remove(tmp_path)
+            except FileNotFoundError:
+                pass
+
+        trees.append((root_id, sub_text, len(members)))
+
+    return trees
+
+
+def run_per_tree_validation(swc_text: str):
+    """
+    Run validation checks on each tree separately.
+    Returns:
+      check_names: ordered list of (code_name, friendly_label)
+      tree_results: list of (root_id, node_count, {code_name: bool|str})
+    """
+    trees = _split_swc_by_trees(swc_text)
+
+    if not trees:
+        return [], []
+
+    # If single tree, just run normal validation
+    all_check_names = set()
+    tree_results = []
+
+    for root_id, sub_text, node_count in trees:
+        results, _bytes, _rows = run_format_validation_from_text(sub_text)
+        all_check_names.update(results.keys())
+        tree_results.append((root_id, node_count, results))
+
+    # Build ordered check names list
+    check_list = [(code, _friendly_label(code)) for code in all_check_names]
+    check_list.sort(key=lambda t: _row_sort_key(t[0], t[1]))
+
+    return check_list, tree_results
