@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QCheckBox, QFileDialog, QMessageBox, QPlainTextEdit,
+    QCheckBox, QFileDialog, QPlainTextEdit,
 )
 
 from validation_core import _split_swc_by_soma_roots
@@ -74,8 +74,9 @@ class BatchTabWidget(QWidget):
         self._flag_rad = QCheckBox("--rad")
         self._flag_zip = QCheckBox("--zip")
 
+        self._flag_soma.setChecked(True)
         self._flag_axon.setChecked(True)
-        self._flag_dend.setChecked(True)
+        self._flag_basal.setChecked(True)
 
         for cb in (
             self._flag_soma, self._flag_axon, self._flag_dend, self._flag_apic,
@@ -118,6 +119,7 @@ class BatchTabWidget(QWidget):
             self, "Choose folder containing SWC files"
         )
         if not in_folder:
+            self._set_status("Folder split cancelled.")
             return
 
         swc_files = sorted(
@@ -125,7 +127,7 @@ class BatchTabWidget(QWidget):
             if p.is_file() and p.suffix.lower() == ".swc"
         )
         if not swc_files:
-            QMessageBox.information(self, "No SWC files", "No .swc files found in the selected folder.")
+            self._set_status(f"No .swc files found in:\n{in_folder}")
             return
 
         files_split = 0
@@ -167,9 +169,6 @@ class BatchTabWidget(QWidget):
         )
         if failures:
             summary += "\n\nFirst errors:\n" + "\n".join(failures[:5])
-            QMessageBox.warning(self, "Folder split completed with errors", summary)
-        else:
-            QMessageBox.information(self, "Folder split completed", summary)
         self._set_status(summary)
 
     def _on_run_batch_check(self):
@@ -177,6 +176,7 @@ class BatchTabWidget(QWidget):
             self, "Select folder with SWC files for rule-based batch processing"
         )
         if not folder_path:
+            self._set_status("Rule-based batch processing cancelled.")
             return
 
         swc_files = [
@@ -184,7 +184,7 @@ class BatchTabWidget(QWidget):
             if f.lower().endswith(".swc") and os.path.isfile(os.path.join(folder_path, f))
         ]
         if not swc_files:
-            QMessageBox.information(self, "No SWC files", f"No .swc files found in:\n{folder_path}")
+            self._set_status(f"No .swc files found in:\n{folder_path}")
             return
 
         flags = set(self._selected_flags())
@@ -205,7 +205,6 @@ class BatchTabWidget(QWidget):
         except Exception as e:
             msg = f"Rule-based batch processing failed:\n{e}"
             self._set_status(msg)
-            QMessageBox.critical(self, "Batch processing failed", msg)
             return
 
         lines = [
@@ -234,7 +233,3 @@ class BatchTabWidget(QWidget):
 
         msg = "\n".join(lines)
         self._set_status(msg)
-        if result.files_failed:
-            QMessageBox.warning(self, "Batch processing completed with errors", msg)
-        else:
-            QMessageBox.information(self, "Batch processing completed", msg)
