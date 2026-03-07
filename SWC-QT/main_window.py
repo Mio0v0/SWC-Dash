@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from swc_table_widget import SWCTableWidget
+from batch_tab import BatchTabWidget
 from validation_tab import ValidationTabWidget
 from editor_tab import EditorTab
 from constants import SWC_COLS
@@ -56,19 +57,23 @@ class SWCMainWindow(QMainWindow):
     def _build_ui(self):
         self._tabs = QTabWidget()
 
-        # --- Tab 1: Format Validation ---
+        # --- Tab 1: Batch Processing ---
+        self._batch_tab = BatchTabWidget()
+
+        # --- Tab 2: Format Validation ---
         self._validation_tab = ValidationTabWidget(as_panel=False)
 
-        # --- Tab 2: Dendrogram Editor + 3D View ---
+        # --- Tab 3: Dendrogram Editor + 3D View ---
         self._editor_tab = EditorTab()
         self._editor_tab.df_changed.connect(self._on_editor_df_changed)
 
-        # --- Tab 3: Radii Cleaner ---
+        # --- Tab 4: Radii Cleaner ---
         self._radii_tab = QWidget()
         radii_layout = QVBoxLayout(self._radii_tab)
         radii_layout.addWidget(QLabel("Radii Cleaner — Coming in Milestone 5."))
         radii_layout.addStretch()
 
+        self._tabs.addTab(self._batch_tab, "Batch Processing")
         self._tabs.addTab(self._validation_tab, "Format Validation")
         self._tabs.addTab(self._editor_tab, "Dendrogram Editor")
         self._tabs.addTab(self._radii_tab, "Radii Cleaner")
@@ -202,8 +207,8 @@ class SWCMainWindow(QMainWindow):
                 break
 
     def _on_tab_changed(self, tab_index: int):
-        """Show side validation panel for non-validation tabs only."""
-        self._validation_panel.setVisible(tab_index != 0)
+        """Show side validation panel only on editor/radii tabs."""
+        self._validation_panel.setVisible(tab_index >= 2)
 
     def _on_editor_df_changed(self, df: pd.DataFrame):
         """Refresh table + validation when dendrogram edits modify SWC data."""

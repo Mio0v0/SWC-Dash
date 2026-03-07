@@ -117,10 +117,6 @@ class ValidationTabWidget(QWidget):
         self._btn_save_all.clicked.connect(self._on_save_all)
         btn_layout.addWidget(self._btn_save_all)
 
-        self._btn_split_folder = QPushButton("Split Folder SWCs")
-        self._btn_split_folder.clicked.connect(self._on_split_folder)
-        btn_layout.addWidget(self._btn_split_folder)
-
         self._btn_export_json = QPushButton("Export Validation JSON")
         self._btn_export_json.setEnabled(False)
         self._btn_export_json.clicked.connect(self._on_export_json)
@@ -170,7 +166,6 @@ class ValidationTabWidget(QWidget):
                 "color: #888; padding: 10px; font-size: 13px;"
             )
             self._btn_save_all.setEnabled(False)
-            self._btn_split_folder.setEnabled(True)
             self._btn_export_json.setEnabled(False)
             self._apply_panel_mode()
             return
@@ -210,7 +205,6 @@ class ValidationTabWidget(QWidget):
         self._populate_grid(check_names, tree_results, is_multi)
         self._populate_compact_grid(check_names, tree_results)
         self._btn_save_all.setEnabled(self._show_save_all)
-        self._btn_split_folder.setEnabled(True)
         self._btn_export_json.setEnabled(True)
         self._apply_panel_mode()
 
@@ -230,7 +224,6 @@ class ValidationTabWidget(QWidget):
             self._btn_save_all.setVisible(self._show_save_all)
             self._btn_export_json.setVisible(True)
             self._btn_export_json.setEnabled(self._has_results)
-            self._btn_split_folder.setVisible(True)
             self._save_status.setVisible(True)
             return
 
@@ -244,7 +237,6 @@ class ValidationTabWidget(QWidget):
             self._grid.setVisible(False)
             self._compact_grid.setVisible(self._has_results)
             self._btn_save_all.setVisible(False)
-            self._btn_split_folder.setVisible(False)
             self._btn_export_json.setVisible(False)
             self._save_status.setVisible(False)
             return
@@ -258,7 +250,6 @@ class ValidationTabWidget(QWidget):
         self._grid.setVisible(self._has_results)
         self._compact_grid.setVisible(False)
         self._btn_save_all.setVisible(self._show_save_all)
-        self._btn_split_folder.setVisible(True)
         self._btn_export_json.setVisible(True)
         self._btn_export_json.setEnabled(self._has_results)
         self._save_status.setVisible(True)
@@ -377,69 +368,6 @@ class ValidationTabWidget(QWidget):
             self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
         except Exception as e:
             QMessageBox.critical(self, "Save error", str(e))
-
-    def _on_split_folder(self):
-        """Split multi-cell SWC files in a folder; save each file into its own subfolder."""
-        in_folder = QFileDialog.getExistingDirectory(
-            self,
-            "Choose folder containing SWC files",
-        )
-        if not in_folder:
-            return
-
-        swc_files = sorted(
-            p for p in Path(in_folder).iterdir()
-            if p.is_file() and p.suffix.lower() == ".swc"
-        )
-        if not swc_files:
-            QMessageBox.information(self, "No SWC files", "No .swc files found in the selected folder.")
-            return
-
-        files_split = 0
-        files_skipped = 0
-        cells_saved = 0
-        failures = []
-
-        for swc_path in swc_files:
-            try:
-                with open(swc_path, "r", encoding="utf-8", errors="ignore") as f:
-                    swc_text = f.read()
-                trees = _split_swc_by_soma_roots(swc_text)
-
-                if len(trees) <= 1:
-                    files_skipped += 1
-                    continue
-
-                files_split += 1
-                stem = swc_path.stem
-                out_dir = Path(in_folder) / stem
-                out_dir.mkdir(parents=True, exist_ok=True)
-
-                for idx, (_root_id, sub_text, _node_count) in enumerate(trees, start=1):
-                    out_path = out_dir / f"{stem}_tree{idx}.swc"
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        f.write(sub_text)
-                    cells_saved += 1
-            except Exception as e:
-                failures.append(f"{swc_path.name}: {e}")
-
-        self._save_status.setText(
-            f"✓ Folder split done: {cells_saved} cell file(s) from {files_split} SWC file(s)"
-        )
-        self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
-
-        summary = (
-            f"Processed {len(swc_files)} SWC file(s).\n"
-            f"Split files: {files_split}\n"
-            f"Skipped (<=1 soma-root cell): {files_skipped}\n"
-            f"Saved cell files: {cells_saved}\n"
-            f"Failures: {len(failures)}"
-        )
-        if failures:
-            summary += "\n\nFirst errors:\n" + "\n".join(failures[:5])
-            QMessageBox.warning(self, "Folder split completed with errors", summary)
-        else:
-            QMessageBox.information(self, "Folder split completed", summary)
 
     def _on_export_json(self):
         """Export validation results as JSON."""

@@ -202,6 +202,91 @@ def _dendrogram_tab():
     )
 
 
+def _batch_tab():
+    return html.Div(
+        [
+            html.H2("Batch Processing", style={"marginBottom": 6}),
+            html.P(
+                "Run folder-level SWC tools. Pick a folder and process all .swc files automatically.",
+                style={"color": "#555", "maxWidth": 780},
+            ),
+
+            html.Hr(style={"marginTop": 10}),
+            html.H4("Batch folder split", style={"marginBottom": 6}),
+            html.P(
+                "Select a folder. Every multi-tree SWC file in that folder will be split into "
+                "individual tree files saved in a sub-folder named after the original file.",
+                style={"color": "#555", "fontSize": 13, "maxWidth": 780},
+            ),
+            html.Button(
+                "📂  Select folder to split…",
+                id="btn-batch-split",
+                style={
+                    "padding": "10px 20px",
+                    "border": "2px dashed #999",
+                    "borderRadius": 6,
+                    "background": "#fafafa",
+                    "cursor": "pointer",
+                    "fontSize": 14,
+                    "color": "#333",
+                    "marginBottom": 8,
+                },
+            ),
+            html.Div(
+                id="batch-split-status",
+                children="",
+                style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#333",
+                       "maxWidth": 780, "marginTop": 4},
+            ),
+
+            html.Hr(style={"marginTop": 20}),
+            html.H4("SWC_BATCH_CHECK (Rule-Based Batch Processing)", style={"marginBottom": 6}),
+            html.P(
+                "Run SWC_BATCH_CHECK on a selected folder using morphology rules. "
+                "Choose which rule flags to apply, then click run.",
+                style={"color": "#555", "fontSize": 13, "maxWidth": 780},
+            ),
+            dcc.Checklist(
+                id="swc-batch-check-flags",
+                options=[
+                    {"label": "soma connectivity (--soma)", "value": "--soma"},
+                    {"label": "axon connectivity (--axon)", "value": "--axon"},
+                    {"label": "apical connectivity (--apic)", "value": "--apic"},
+                    {"label": "basal connectivity (--basal)", "value": "--basal"},
+                    {"label": "fix zero radius (--rad)", "value": "--rad"},
+                    {"label": "zip output (--zip)", "value": "--zip"},
+                ],
+                value=["--axon", "--basal"],
+                style={"fontSize": 13, "color": "#333", "marginBottom": 8},
+            ),
+            dcc.Input(
+                id="swc-batch-check-cmd",
+                type="text",
+                value="",
+                placeholder="Optional command override, e.g. perl /path/to/driver.pl",
+                style={"width": "100%", "maxWidth": 780, "marginBottom": 8},
+            ),
+            html.Button(
+                "Run SWC_BATCH_CHECK on folder…",
+                id="btn-run-swc-batch-check",
+                style={
+                    "padding": "10px 16px",
+                    "borderRadius": 6,
+                    "border": "1px solid #666",
+                    "background": "#f4f4f4",
+                    "cursor": "pointer",
+                    "fontSize": 14,
+                },
+            ),
+            html.Div(
+                id="swc-batch-check-status",
+                children="",
+                style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#333",
+                       "maxWidth": 780, "marginTop": 8},
+            ),
+        ]
+    )
+
 
 def _validation_tab():
     return html.Div(
@@ -242,36 +327,6 @@ def _validation_tab():
                 id="save-all-trees-status",
                 children="",
                 style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#0a7",
-                       "maxWidth": 700, "marginTop": 4},
-            ),
-
-            # ---- Batch folder split panel ----
-            html.Hr(style={"marginTop": 20}),
-            html.H4("Batch folder split", style={"marginBottom": 6}),
-            html.P(
-                "Click the button to select a folder. Every multi-tree SWC file in that "
-                "folder will be split into individual tree files saved in a sub-folder named "
-                "after the original file.",
-                style={"color": "#555", "fontSize": 13, "maxWidth": 700},
-            ),
-            html.Button(
-                "📂  Select folder to split…",
-                id="btn-batch-split",
-                style={
-                    "padding": "10px 20px",
-                    "border": "2px dashed #999",
-                    "borderRadius": 6,
-                    "background": "#fafafa",
-                    "cursor": "pointer",
-                    "fontSize": 14,
-                    "color": "#333",
-                    "marginBottom": 8,
-                },
-            ),
-            html.Div(
-                id="batch-split-status",
-                children="",
-                style={"fontSize": 13, "whiteSpace": "pre-wrap", "color": "#333",
                        "maxWidth": 700, "marginTop": 4},
             ),
 
@@ -547,6 +602,7 @@ def build_layout():
                 id="tabs",
                 value="tab-validate",
                 children=[
+                    dcc.Tab(label="Batch Processing", value="tab-batch"),
                     dcc.Tab(label="Format Validation", value="tab-validate"),
                     dcc.Tab(label="Dendrogram Editor", value="tab-dendro"),
                     dcc.Tab(label="Radii cleaner", value="tab-viewer"),
@@ -555,6 +611,7 @@ def build_layout():
             html.Div(
                 id="tab-content",
                 children=[
+                    html.Div(_batch_tab(), id="tab-pane-batch", style={"display": "none"}),
                     html.Div(
                         _validation_tab(),
                         id="tab-pane-validate",

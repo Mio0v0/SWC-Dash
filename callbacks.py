@@ -1,5 +1,7 @@
 import base64
 import os
+import shlex
+import shutil
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -13,7 +15,7 @@ from graph_utils import subtree_nodes, build_tree_cache, children_payload
 from constants import color_for_type, label_for_type, DEFAULT_COLORS, TREE_COLORS
 from validation_core import run_format_validation_from_text, run_per_tree_validation, clear_cache as clear_validation_cache, _split_swc_by_trees
 
-from layout import _dendrogram_tab, _validation_tab, _viewer_tab
+from layout import _batch_tab, _dendrogram_tab, _validation_tab, _viewer_tab
 
 
 # ---------- helpers ----------
@@ -380,6 +382,7 @@ def register_callbacks(app):
 
     # ---------------- Tabs visibility ----------------
     @app.callback(
+        Output("tab-pane-batch", "style"),
         Output("tab-pane-dendro", "style"),
         Output("tab-pane-validate", "style"),
         Output("tab-pane-viewer", "style"),
@@ -389,11 +392,13 @@ def register_callbacks(app):
     def set_tab_visibility(which):
         show = {"display": "block"}
         hide = {"display": "none"}
+        if which == "tab-batch":
+            return show, hide, hide, hide
         if which == "tab-validate":
-            return hide, show, hide
+            return hide, hide, show, hide
         if which == "tab-viewer":
-            return hide, hide, show
-        return show, hide, hide
+            return hide, hide, hide, show
+        return hide, show, hide, hide
 
     # ---- helper: add level markers to per-tree figures ----
     def _add_level_overlay(figs, info, level_val, compress):
@@ -1843,3 +1848,102 @@ def register_callbacks(app):
         )
         color = "#d62728" if errors and total_split == 0 else "#0a7"
         return summary, {**base_style, "color": color}
+
+    @app.callback(
+        Output("swc-batch-check-status", "children"),
+        Output("swc-batch-check-status", "style"),
+        Input("btn-run-swc-batch-check", "n_clicks"),
+        State("swc-batch-check-flags", "value"),
+        State("swc-batch-check-cmd", "value"),
+        prevent_initial_call=True,
+    )
+    def run_swc_batch_check(n_clicks, flag_values, cmd_override):
+        base_style = {"fontSize": 13, "whiteSpace": "pre-wrap", "maxWidth": 780, "marginTop": 4}
+        if not n_clicks:
+            return "", base_style
+
+        folder_path = _pick_folder("Select folder with SWC files for SWC_BATCH_CHECK")
+        if not folder_path:
+            return "Folder selection cancelled.", {**base_style, "color": "#999"}
+
+        swc_files = [
+            f for f in os.listdir(folder_path)
+            if f.lower().endswith(".swc") and os.path.isfile(os.path.join(folder_path, f))
+        ]
+        if not swc_files:
+            return f"No .swc files found in:\n{folder_path}", {**base_style, "color": "#999"}
+
+        flags = [f for f in (flag_values or []) if isinstance(f, str) and f.startswith("--")]
+        flags = sorted(set(flags))
+
+        def _resolve_base_cmd():
+            override = (cmd_override or "").strip()
+            if override:
+                return shlex.split(override)
+
+            # Auto-detect common install styles:
+            # 1) direct binary in PATH
+            # 2) local cloned repo with driver.pl
+            for exe in ("SWC_BATCH_CHECK", "swc_batch_check"):
+                found = shutil.which(exe)
+                if found:
+                    return [found]
+
+            for repo_dir in (
+                os.path.join(os.getcwd(), "SWC_BATCH_CHECK"),
+                os.path.join(os.path.dirname(os.getcwd()), "SWC_BATCH_CHECK"),
+            ):
+                driver = os.path.join(repo_dir, "driver.pl")
+                if os.path.isfile(driver):
+                    return ["perl", driver]
+
+            return []
+
+        base_cmd = _resolve_base_cmd()
+        if not base_cmd:
+            return (
+                "SWC_BATCH_CHECK command not found.\n"
+                "Install from GitHub (dohalloran/SWC_BATCH_CHECK), then either:\n"
+                "1) make SWC_BATCH_CHECK available in PATH, or\n"
+                "2) set command override (e.g. perl /path/to/SWC_BATCH_CHECK/driver.pl).",
+                {**base_style, "color": "#d62728"},
+            )
+
+        cmd = [*base_cmd, *flags, "--d", folder_path]
+        try:
+            result = _subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=3600,
+            )
+        except Exception as e:
+            return f"Failed to run SWC_BATCH_CHECK:\n{e}", {**base_style, "color": "#d62728"}
+
+        out_tail = (result.stdout or "").strip()
+        err_tail = (result.stderr or "").strip()
+        if len(out_tail) > 4000:
+            out_tail = out_tail[-4000:]
+        if len(err_tail) > 2000:
+            err_tail = err_tail[-2000:]
+
+        if result.returncode == 0:
+            msg = (
+                f"✓ SWC_BATCH_CHECK completed.\n"
+                f"Folder: {folder_path}\n"
+                f"Files detected: {len(swc_files)}\n"
+                f"Command: {' '.join(cmd)}"
+            )
+            if out_tail:
+                msg += f"\n\nOutput (tail):\n{out_tail}"
+            return msg, {**base_style, "color": "#0a7"}
+
+        msg = (
+            f"SWC_BATCH_CHECK failed (exit {result.returncode}).\n"
+            f"Command: {' '.join(cmd)}"
+        )
+        if out_tail:
+            msg += f"\n\nStdout (tail):\n{out_tail}"
+        if err_tail:
+            msg += f"\n\nStderr (tail):\n{err_tail}"
+        return msg, {**base_style, "color": "#d62728"}
