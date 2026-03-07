@@ -363,6 +363,98 @@ def _split_swc_by_trees(swc_text: str):
     return trees
 
 
+def _split_swc_by_soma_roots(swc_text: str):
+    """Split SWC into cell files using only soma roots (type==1 and parent==-1).
+
+    Returns list of (soma_root_id, sub_swc_text, node_count).
+    Non-soma roots are attached to the nearest soma-root cell by Euclidean distance.
+    If no soma root exists, returns an empty list.
+    """
+    arr = _load_swc_to_array(swc_text)
+    if arr.size == 0:
+        return []
+
+    ids = arr["id"]
+    types = arr["type"]
+    parents = arr["parent"]
+    xyz = np.column_stack((arr["x"], arr["y"], arr["z"])).astype(np.float64)
+
+    id_to_idx = {int(ids[i]): i for i in range(len(ids))}
+
+    # Build children map once
+    children_map = {}
+    for i in range(len(ids)):
+        pid = int(parents[i])
+        if pid >= 0:
+            children_map.setdefault(pid, []).append(int(ids[i]))
+
+    # True cell roots must be soma roots only
+    soma_roots = [
+        int(ids[i]) for i in range(len(ids))
+        if int(parents[i]) == -1 and int(types[i]) == 1
+    ]
+    soma_roots = sorted(set(soma_roots))
+    if not soma_roots:
+        return []
+
+    # Any other root-like entries get merged into nearest soma-root cell
+    other_roots = [
+        int(ids[i]) for i in range(len(ids))
+        if int(parents[i]) < 0 and int(ids[i]) not in soma_roots
+    ]
+    other_roots = sorted(set(other_roots))
+
+    def collect_members(root_id: int) -> set[int]:
+        members = set()
+        queue = [root_id]
+        while queue:
+            nid = queue.pop(0)
+            if nid in members:
+                continue
+            members.add(nid)
+            for child in children_map.get(nid, []):
+                queue.append(child)
+        return members
+
+    tree_groups = [(root_id, collect_members(root_id)) for root_id in soma_roots]
+
+    # Attach dangling non-soma roots to nearest soma-root tree
+    soma_root_xyz = {
+        root_id: xyz[id_to_idx[root_id]]
+        for root_id in soma_roots
+        if root_id in id_to_idx
+    }
+    for root_id in other_roots:
+        droot_xyz = xyz[id_to_idx[root_id]]
+        nearest_root = min(
+            soma_roots,
+            key=lambda rid: np.linalg.norm(soma_root_xyz[rid] - droot_xyz),
+        )
+        target_idx = soma_roots.index(nearest_root)
+        tree_groups[target_idx][1].update(collect_members(root_id))
+
+    trees = []
+    for root_id, members in tree_groups:
+        sub_rows = [arr[i] for i in range(len(ids)) if int(ids[i]) in members]
+        if not sub_rows:
+            continue
+
+        sub_arr = np.array(sub_rows, dtype=_SWCTYPE)
+        tmp_path = _write_array_to_tmp_swc(sub_arr)
+        try:
+            with open(tmp_path, "r") as f:
+                sub_text = f.read()
+        finally:
+            try:
+                os.remove(tmp_path)
+            except FileNotFoundError:
+                pass
+
+        trees.append((root_id, sub_text, len(members)))
+
+    return trees
+
+
 def run_per_tree_validation(swc_text: str):
     """
     Run validation checks on each tree separately.
@@ -370,7 +462,10 @@ def run_per_tree_validation(swc_text: str):
       check_names: ordered list of (code_name, friendly_label)
       tree_results: list of (root_id, node_count, {code_name: bool|str})
     """
-    trees = _split_swc_by_trees(swc_text)
+    trees = _split_swc_by_soma_roots(swc_text)
+    if not trees:
+        # Fallback keeps validation usable for malformed files with no soma root.
+        trees = _split_swc_by_trees(swc_text)
 
     if not trees:
         return [], []

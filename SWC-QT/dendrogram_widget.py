@@ -61,7 +61,7 @@ class BubbleTooltip(QGraphicsItem):
     def __init__(self):
         super().__init__()
         self._text = ""
-        self._font = QFont("sans-serif", 10)
+        self._font = QFont("Sans Serif", 10)
         self._bg = QColor(230, 230, 230, 230)
         self._border = QColor(180, 180, 180)
         self._text_color = QColor(50, 50, 50)

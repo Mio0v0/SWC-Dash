@@ -1,17 +1,14 @@
 """Main window with tabbed interface and SWC file loading."""
 
 import os
-from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFileDialog, QMessageBox, QStatusBar,
-    QSplitter,
+    QLabel, QFileDialog, QMessageBox, QStatusBar,
 )
 
 from swc_table_widget import SWCTableWidget
@@ -60,10 +57,11 @@ class SWCMainWindow(QMainWindow):
         self._tabs = QTabWidget()
 
         # --- Tab 1: Format Validation ---
-        self._validation_tab = ValidationTabWidget()
+        self._validation_tab = ValidationTabWidget(as_panel=False)
 
         # --- Tab 2: Dendrogram Editor + 3D View ---
         self._editor_tab = EditorTab()
+        self._editor_tab.df_changed.connect(self._on_editor_df_changed)
 
         # --- Tab 3: Radii Cleaner ---
         self._radii_tab = QWidget()
@@ -74,6 +72,11 @@ class SWCMainWindow(QMainWindow):
         self._tabs.addTab(self._validation_tab, "Format Validation")
         self._tabs.addTab(self._editor_tab, "Dendrogram Editor")
         self._tabs.addTab(self._radii_tab, "Radii Cleaner")
+
+        # Shared validation panel on the right side for non-validation tabs
+        self._validation_panel = ValidationTabWidget(as_panel=True)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+        self._tabs.setCurrentIndex(0)
 
         # --- Central layout with drop zone + tabs ---
         central = QWidget()
@@ -100,13 +103,20 @@ class SWCMainWindow(QMainWindow):
         self._file_banner.mousePressEvent = lambda e: self._on_open()
         main_layout.addWidget(self._file_banner)
 
-        # Data table (initially hidden)
+        # Shared SWC table panel on the left side for all tabs
         self._table_widget = SWCTableWidget()
-        self._table_widget.setVisible(False)
-        main_layout.addWidget(self._table_widget, stretch=1)
 
-        main_layout.addWidget(self._tabs, stretch=3)
+        tab_row = QWidget()
+        tab_row_layout = QHBoxLayout(tab_row)
+        tab_row_layout.setContentsMargins(0, 0, 0, 0)
+        tab_row_layout.setSpacing(8)
+        tab_row_layout.addWidget(self._table_widget)
+        tab_row_layout.addWidget(self._tabs, stretch=1)
+        tab_row_layout.addWidget(self._validation_panel)
+        main_layout.addWidget(tab_row, stretch=3)
+
         self.setCentralWidget(central)
+        self._on_tab_changed(self._tabs.currentIndex())
 
     def _build_status_bar(self):
         self._status = QStatusBar()
@@ -158,10 +168,10 @@ class SWCMainWindow(QMainWindow):
             )
 
             self._table_widget.load_dataframe(df)
-            self._table_widget.setVisible(True)
 
             # Run validation
             self._validation_tab.load_swc(df, self._filename)
+            self._validation_panel.load_swc(df, self._filename)
 
             # Load dendrogram + 3D view
             self._editor_tab.load_swc(df, self._filename)
@@ -190,3 +200,14 @@ class SWCMainWindow(QMainWindow):
             if path.lower().endswith(".swc"):
                 self._load_swc(path)
                 break
+
+    def _on_tab_changed(self, tab_index: int):
+        """Show side validation panel for non-validation tabs only."""
+        self._validation_panel.setVisible(tab_index != 0)
+
+    def _on_editor_df_changed(self, df: pd.DataFrame):
+        """Refresh table + validation when dendrogram edits modify SWC data."""
+        self._df = df.copy()
+        self._table_widget.load_dataframe(self._df)
+        self._validation_tab.load_swc(self._df, self._filename)
+        self._validation_panel.load_swc(self._df, self._filename)
