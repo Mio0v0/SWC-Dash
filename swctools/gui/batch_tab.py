@@ -15,8 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from rule_batch_processor import RuleBatchOptions, run_rule_batch
-from validation_core import _split_swc_by_soma_roots
+from .rule_batch_processor import RuleBatchOptions, run_rule_batch
+from .validation_core import _split_swc_by_soma_roots
 
 
 class BatchTabWidget(QWidget):

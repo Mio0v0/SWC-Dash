@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QTableView, QAbstractItemView, QSizePolicy,
 )
 
-from constants import SWC_COLS, color_for_type, label_for_type
+from .constants import SWC_COLS, color_for_type, label_for_type
 
 
 # ------------------------------------------------------------------ Model

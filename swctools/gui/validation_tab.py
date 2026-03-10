@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QFileDialog, QSizePolicy,
 )
 
-from validation_core import run_per_tree_validation, _split_swc_by_soma_roots
+from .validation_core import run_per_tree_validation, _split_swc_by_soma_roots
 
 
 # Non-fatal checks that show orange instead of red

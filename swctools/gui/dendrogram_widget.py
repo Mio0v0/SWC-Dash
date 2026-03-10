@@ -16,11 +16,11 @@ from PySide6.QtWidgets import (
     QGraphicsItem,
 )
 
-from graph_utils import (
+from .graph_utils import (
     build_tree_cache, find_all_roots, cumlens_from_root_cache,
     layout_y_positions_cache, compute_levels, merge_dangling_trees,
 )
-from constants import (
+from .constants import (
     color_for_type, label_for_type, DEFAULT_COLORS, SWC_COLS,
 )
 

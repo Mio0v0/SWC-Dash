@@ -23,12 +23,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from batch_tab import BatchTabWidget
-from constants import SWC_COLS
-from editor_tab import EditorTab
-from neuron_3d_widget import Neuron3DWidget
-from swc_table_widget import SWCTableWidget
-from validation_tab import ValidationTabWidget
+from .batch_tab import BatchTabWidget
+from .constants import SWC_COLS
+from .editor_tab import EditorTab
+from .neuron_3d_widget import Neuron3DWidget
+from .swc_table_widget import SWCTableWidget
+from .validation_tab import ValidationTabWidget
 
 
 class SWCMainWindow(QMainWindow):

@@ -4,7 +4,7 @@ import sys
 import os
 
 from PySide6.QtWidgets import QApplication
-from main_window import SWCMainWindow
+from .main_window import SWCMainWindow
 
 
 def main():

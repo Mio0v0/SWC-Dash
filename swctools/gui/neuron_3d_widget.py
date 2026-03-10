@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup, QLabel,
 )
 
-from constants import color_for_type, label_for_type, DEFAULT_COLORS, SWC_COLS
+from .constants import color_for_type, label_for_type, DEFAULT_COLORS, SWC_COLS
 
 # Number of facets around each frustum cross-section
 _N_FACETS = 8

@@ -3,7 +3,7 @@ from typing import Dict, List, Sequence, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from constants import SWC_COLS
+from .constants import SWC_COLS
 
 
 @dataclass

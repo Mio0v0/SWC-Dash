@@ -14,9 +14,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from constants import DEFAULT_COLORS, label_for_type
-from dendrogram_widget import DendrogramWidget
-from neuron_3d_widget import Neuron3DWidget
+from .constants import DEFAULT_COLORS, label_for_type
+from .dendrogram_widget import DendrogramWidget
+from .neuron_3d_widget import Neuron3DWidget
 
 
 class _Projection2DWidget(QWidget):
