@@ -128,6 +128,42 @@ class Neuron3DWidget(QWidget):
         self._df = df.copy()
         self._draw()
 
+    def set_render_mode(self, mode_id: int):
+        """Set rendering mode programmatically."""
+        if mode_id not in (self.MODE_LINES, self.MODE_SPHERES, self.MODE_FRUSTUM):
+            return
+        self._mode = int(mode_id)
+        btn = self._mode_group.button(self._mode)
+        if btn is not None:
+            btn.setChecked(True)
+        self._draw()
+
+    def set_camera_view(self, preset: str):
+        """Apply a camera preset: iso, top, front, side."""
+        p = (preset or "").strip().lower()
+        if p == "top":
+            self._view.camera.elevation = 90
+            self._view.camera.azimuth = 0
+        elif p == "front":
+            self._view.camera.elevation = 0
+            self._view.camera.azimuth = 90
+        elif p == "side":
+            self._view.camera.elevation = 0
+            self._view.camera.azimuth = 0
+        else:  # iso
+            self._view.camera.elevation = 30
+            self._view.camera.azimuth = 45
+        self._fit_camera()
+        self._canvas.update()
+
+    def reset_camera(self):
+        """Reset camera and fit to current data."""
+        self._view.camera.fov = 45
+        self._view.camera.elevation = 30
+        self._view.camera.azimuth = 45
+        self._fit_camera()
+        self._canvas.update()
+
     def highlight_node(self, swc_id: int):
         """Highlight a specific node by SWC ID."""
         self._highlight_id = swc_id
@@ -164,18 +200,24 @@ class Neuron3DWidget(QWidget):
         else:
             self._draw_frustum(ids, types, parents, radii, xyz, id2idx)
 
-        # Auto-fit camera
-        all_xyz = xyz[np.isfinite(xyz).all(axis=1)]
-        if all_xyz.size > 0:
-            center = all_xyz.mean(axis=0)
-            extent = all_xyz.max(axis=0) - all_xyz.min(axis=0)
-            dist = float(np.linalg.norm(extent)) * 0.8
-            self._view.camera.center = tuple(center)
-            self._view.camera.distance = max(dist, 50)
+        self._fit_camera()
 
         # Draw highlight if set
         self._draw_highlight()
         self._canvas.update()
+
+    def _fit_camera(self):
+        if self._df is None or self._df.empty:
+            return
+        xyz = self._df[["x", "y", "z"]].to_numpy(dtype=np.float32)
+        all_xyz = xyz[np.isfinite(xyz).all(axis=1)]
+        if all_xyz.size == 0:
+            return
+        center = all_xyz.mean(axis=0)
+        extent = all_xyz.max(axis=0) - all_xyz.min(axis=0)
+        dist = float(np.linalg.norm(extent)) * 0.8
+        self._view.camera.center = tuple(center)
+        self._view.camera.distance = max(dist, 50)
 
     def _draw_highlight(self):
         """Draw a bright marker at the highlighted node's 3D position."""

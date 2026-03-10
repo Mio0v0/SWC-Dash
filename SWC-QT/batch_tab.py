@@ -1,71 +1,87 @@
-"""Batch processing tab for folder-level SWC operations."""
+"""Batch processing controls for split, auto-labeling, and radii cleaning."""
 
 import os
 from pathlib import Path
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QCheckBox, QFileDialog, QPlainTextEdit,
+    QCheckBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
-from validation_core import _split_swc_by_soma_roots
 from rule_batch_processor import RuleBatchOptions, run_rule_batch
+from validation_core import _split_swc_by_soma_roots
 
 
 class BatchTabWidget(QWidget):
-    """Batch operations: split folders and apply rule-based SWC type processing."""
+    """Owns three batch control pages used directly by Control Center tabs."""
+
+    log_message = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._build_ui()
+        self._status_boxes: list[QPlainTextEdit] = []
+        self._split_page = self._build_split_page()
+        self._auto_page = self._build_auto_page()
+        self._radii_page = self._build_radii_page()
 
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
+        # This root widget is not shown directly; pages are used in main window tabs.
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(QLabel("Batch controls are shown as tabs in Control Center."))
+
+    # --------------------------------------------------------- Public page access
+    def split_tab_widget(self) -> QWidget:
+        return self._split_page
+
+    def auto_tab_widget(self) -> QWidget:
+        return self._auto_page
+
+    def radii_tab_widget(self) -> QWidget:
+        return self._radii_page
+
+    # --------------------------------------------------------- UI builders
+    def _build_split_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        title = QLabel("Batch Processing")
-        title.setStyleSheet("font-size: 16px; font-weight: 600; color: #333;")
-        layout.addWidget(title)
-
-        intro = QLabel(
-            "Run folder-level tools on all SWC files in a selected directory."
+        desc = QLabel(
+            "Select a folder and split each multi-cell SWC into separate trees.\n"
+            "Output naming: <original>/<original>_tree1.swc, _tree2.swc, ..."
         )
-        intro.setWordWrap(True)
-        intro.setStyleSheet("font-size: 13px; color: #555;")
-        layout.addWidget(intro)
+        desc.setWordWrap(True)
+        desc.setStyleSheet("font-size: 12px; color: #555;")
+        layout.addWidget(desc)
 
-        # --- Batch split section ---
-        split_title = QLabel("Batch folder split")
-        split_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #333;")
-        layout.addWidget(split_title)
-
-        split_desc = QLabel(
-            "For each multi-cell SWC, create a folder named after the file and save "
-            "split files as <original>_tree1.swc, <original>_tree2.swc, ..."
-        )
-        split_desc.setWordWrap(True)
-        split_desc.setStyleSheet("font-size: 12px; color: #666;")
-        layout.addWidget(split_desc)
-
-        self._btn_split_folder = QPushButton("Split Folder SWCs…")
+        self._btn_split_folder = QPushButton("Select Folder and Process Split…")
         self._btn_split_folder.clicked.connect(self._on_split_folder)
         layout.addWidget(self._btn_split_folder)
 
-        # --- Native rule-based section ---
-        batch_title = QLabel("Rule-Based Batch Processing")
-        batch_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #333;")
-        layout.addWidget(batch_title)
+        self._split_status = self._new_status_box()
+        layout.addWidget(self._split_status, stretch=1)
+        return page
 
-        batch_desc = QLabel(
-            "Apply morphology rules to assign/fix SWC types for all files in a folder. "
-            "Outputs are saved to a sibling folder named <original>_batch process."
-        )
-        batch_desc.setWordWrap(True)
-        batch_desc.setStyleSheet("font-size: 12px; color: #666;")
-        layout.addWidget(batch_desc)
+    def _build_auto_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
-        flags_row = QHBoxLayout()
+        desc = QLabel("Auto labeling with morphology rules for all SWC files in a selected folder.")
+        desc.setWordWrap(True)
+        desc.setStyleSheet("font-size: 12px; color: #555;")
+        layout.addWidget(desc)
+
+        flags_row1 = QHBoxLayout()
+        flags_row2 = QHBoxLayout()
         self._flag_soma = QCheckBox("--soma")
         self._flag_axon = QCheckBox("--axon")
         self._flag_dend = QCheckBox("--dendrite")
@@ -78,46 +94,86 @@ class BatchTabWidget(QWidget):
         self._flag_axon.setChecked(True)
         self._flag_basal.setChecked(True)
 
-        for cb in (
-            self._flag_soma, self._flag_axon, self._flag_dend, self._flag_apic,
-            self._flag_basal, self._flag_rad, self._flag_zip,
-        ):
-            flags_row.addWidget(cb)
-        flags_row.addStretch()
-        layout.addLayout(flags_row)
+        for cb in (self._flag_soma, self._flag_axon, self._flag_dend, self._flag_apic):
+            flags_row1.addWidget(cb)
+        flags_row1.addStretch()
+        for cb in (self._flag_basal, self._flag_rad, self._flag_zip):
+            flags_row2.addWidget(cb)
+        flags_row2.addStretch()
+        layout.addLayout(flags_row1)
+        layout.addLayout(flags_row2)
 
-        self._btn_run_batch_check = QPushButton("Run Rule-Based Batch on Folder…")
+        self._btn_run_batch_check = QPushButton("Run Auto Labeling on Folder…")
         self._btn_run_batch_check.clicked.connect(self._on_run_batch_check)
         layout.addWidget(self._btn_run_batch_check)
 
-        self._status = QPlainTextEdit()
-        self._status.setReadOnly(True)
-        self._status.setMinimumHeight(180)
-        self._status.setStyleSheet(
+        self._auto_status = self._new_status_box()
+        layout.addWidget(self._auto_status, stretch=1)
+        return page
+
+    def _build_radii_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        desc = QLabel("Radii cleaning placeholder. Controls will be added later.")
+        desc.setWordWrap(True)
+        desc.setStyleSheet("font-size: 12px; color: #666;")
+        layout.addWidget(desc)
+
+        self._radii_status = self._new_status_box()
+        self._radii_status.setPlainText("Radii Cleaning tab is ready for future options.")
+        layout.addWidget(self._radii_status, stretch=1)
+        return page
+
+    def _new_status_box(self) -> QPlainTextEdit:
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setMinimumHeight(120)
+        w.setStyleSheet(
             "QPlainTextEdit {"
             "  background: #fafafa; border: 1px solid #ddd; color: #333;"
             "  font-family: Menlo, Consolas, monospace; font-size: 12px;"
             "}"
         )
-        layout.addWidget(self._status, stretch=1)
+        self._status_boxes.append(w)
+        return w
 
+    # --------------------------------------------------------- Public operations
+    def run_split_folder(self):
+        self._on_split_folder()
+
+    def run_rule_batch(self):
+        self._on_run_batch_check()
+
+    def set_active_subtab(self, name: str):
+        # Kept for compatibility with older callers.
+        _ = name
+
+    # --------------------------------------------------------- Batch logic
     def _set_status(self, text: str):
-        self._status.setPlainText(text)
+        for box in self._status_boxes:
+            box.setPlainText(text)
+        self.log_message.emit(text)
 
     def _selected_flags(self) -> list[str]:
         flags = []
         for cb in (
-            self._flag_soma, self._flag_axon, self._flag_dend, self._flag_apic,
-            self._flag_basal, self._flag_rad, self._flag_zip,
+            self._flag_soma,
+            self._flag_axon,
+            self._flag_dend,
+            self._flag_apic,
+            self._flag_basal,
+            self._flag_rad,
+            self._flag_zip,
         ):
             if cb.isChecked():
                 flags.append(cb.text())
         return flags
 
     def _on_split_folder(self):
-        in_folder = QFileDialog.getExistingDirectory(
-            self, "Choose folder containing SWC files"
-        )
+        in_folder = QFileDialog.getExistingDirectory(self, "Choose folder containing SWC files")
         if not in_folder:
             self._set_status("Folder split cancelled.")
             return
@@ -203,8 +259,7 @@ class BatchTabWidget(QWidget):
         try:
             result = run_rule_batch(folder_path, opts)
         except Exception as e:
-            msg = f"Rule-based batch processing failed:\n{e}"
-            self._set_status(msg)
+            self._set_status(f"Rule-based batch processing failed:\n{e}")
             return
 
         lines = [
@@ -231,5 +286,4 @@ class BatchTabWidget(QWidget):
             lines.append("Errors:")
             lines.extend(result.failures[:10])
 
-        msg = "\n".join(lines)
-        self._set_status(msg)
+        self._set_status("\n".join(lines))

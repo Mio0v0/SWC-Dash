@@ -158,12 +158,12 @@ class DendrogramWidget(QWidget):
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        splitter = QSplitter(Qt.Horizontal)
-        outer.addWidget(splitter)
+        self._splitter = QSplitter(Qt.Horizontal)
+        outer.addWidget(self._splitter)
 
         # Left: plot
-        plot_container = QWidget()
-        plot_layout = QVBoxLayout(plot_container)
+        self._plot_container = QWidget()
+        plot_layout = QVBoxLayout(self._plot_container)
         plot_layout.setContentsMargins(0, 0, 0, 0)
 
         self._plot = pg.PlotWidget(background="w")
@@ -182,13 +182,13 @@ class DendrogramWidget(QWidget):
         )
 
         plot_layout.addWidget(self._plot)
-        splitter.addWidget(plot_container)
+        self._splitter.addWidget(self._plot_container)
 
         # Right: controls panel
-        controls = QWidget()
-        controls.setMaximumWidth(280)
-        controls.setMinimumWidth(220)
-        ctrl_layout = QVBoxLayout(controls)
+        self._controls_panel = QWidget()
+        self._controls_panel.setMaximumWidth(420)
+        self._controls_panel.setMinimumWidth(220)
+        ctrl_layout = QVBoxLayout(self._controls_panel)
         ctrl_layout.setContentsMargins(8, 8, 8, 8)
 
         # --- Node Info ---
@@ -288,9 +288,19 @@ class DendrogramWidget(QWidget):
         dl_layout.addWidget(self._btn_dl_swc)
         ctrl_layout.addWidget(dl_group)
 
-        splitter.addWidget(controls)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        self._splitter.addWidget(self._controls_panel)
+        self._splitter.setStretchFactor(0, 3)
+        self._splitter.setStretchFactor(1, 1)
+
+    def take_controls_panel(self) -> QWidget:
+        """Detach and return the right-side controls panel for external docking."""
+        if getattr(self, "_controls_panel", None) is None:
+            return QWidget()
+        if self._controls_panel.parent() is self._splitter:
+            self._controls_panel.setParent(None)
+        self._controls_panel.setMinimumWidth(0)
+        self._controls_panel.setMaximumWidth(16777215)
+        return self._controls_panel
 
     # --------------------------------------------------------- Public API
     def load_swc(self, df: pd.DataFrame, filename: str = ""):

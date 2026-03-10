@@ -1,218 +1,700 @@
-"""Main window with tabbed interface and SWC file loading."""
+"""Main window layout for SWC-QT with tabbed Home/Tools top bar."""
 
 import os
+from datetime import datetime
 
 import pandas as pd
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
-    QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QFileDialog, QMessageBox, QStatusBar,
+    QComboBox,
+    QDockWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenuBar,
+    QPlainTextEdit,
+    QPushButton,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from swc_table_widget import SWCTableWidget
 from batch_tab import BatchTabWidget
-from validation_tab import ValidationTabWidget
-from editor_tab import EditorTab
 from constants import SWC_COLS
+from editor_tab import EditorTab
+from neuron_3d_widget import Neuron3DWidget
+from swc_table_widget import SWCTableWidget
+from validation_tab import ValidationTabWidget
 
 
 class SWCMainWindow(QMainWindow):
-    """Top-level window: menu bar, tabs, status bar, drag-and-drop."""
+    """Top-level app window with tabbed top bar, workspace, side panels, and log."""
 
-    swc_loaded = Signal(pd.DataFrame, str)  # df, filename
+    swc_loaded = Signal(pd.DataFrame, str)
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SWC-QT — Neuron Editor")
-        self.resize(1200, 800)
-        self.setAcceptDrops(True)
+        self.resize(1480, 920)
+        self.setAcceptDrops(False)
 
         self._df: pd.DataFrame | None = None
         self._filename: str = ""
+        self._file_path: str = ""
+        self._recent_paths: list[str] = []
+        self._active_tool: str = ""
 
-        self._build_menu()
         self._build_ui()
         self._build_status_bar()
 
     # ------------------------------------------------------------------ UI
-    def _build_menu(self):
-        menu = self.menuBar()
+    def _build_ui(self):
+        # Use an in-window top strip instead of the OS menu bar.
+        self.menuBar().setVisible(False)
 
-        file_menu = menu.addMenu("&File")
+        # ---------------- Top combined bar: Home / Tools ----------------
+        self._top_tabs = self._build_top_tabs()
 
-        open_action = QAction("&Open SWC…", self)
+        # ---------------- Center workspace ----------------
+        self._editor_tab = EditorTab()
+        self._editor_tab.df_changed.connect(self._on_editor_df_changed)
+        self._dendro_controls = self._editor_tab.take_dendrogram_controls_panel()
+
+        # ---------------- Right side: dockable Data Explorer + Control Center ----------------
+        self._data_tabs = QTabWidget()
+        self._table_widget = SWCTableWidget()
+
+        self._info_label = QLabel("No SWC file loaded.")
+        self._info_label.setWordWrap(True)
+        self._info_label.setStyleSheet("font-size: 13px; color: #444; padding: 8px;")
+        info_panel = QWidget()
+        info_layout = QVBoxLayout(info_panel)
+        info_layout.setContentsMargins(6, 6, 6, 6)
+        info_layout.addWidget(self._info_label)
+        info_layout.addStretch()
+
+        self._segment_label = QLabel(
+            "Segment Info\n\nLoad an SWC file and select nodes in dendrogram mode."
+        )
+        self._segment_label.setWordWrap(True)
+        self._segment_label.setStyleSheet("font-size: 13px; color: #555; padding: 8px;")
+        seg_panel = QWidget()
+        seg_layout = QVBoxLayout(seg_panel)
+        seg_layout.setContentsMargins(6, 6, 6, 6)
+        seg_layout.addWidget(self._segment_label)
+        seg_layout.addStretch()
+
+        self._data_tabs.addTab(self._table_widget, "SWC File")
+        self._data_tabs.addTab(info_panel, "Node Info")
+        self._data_tabs.addTab(seg_panel, "Segment Info")
+
+        self._control_tabs = QTabWidget()
+        self._batch_tab = BatchTabWidget()
+        self._validation_tab = ValidationTabWidget(as_panel=False)
+        self._viz_control = self._build_visualization_control_panel()
+        self._set_control_tabs_for_feature("")
+
+        self._data_dock = QDockWidget("Data Explorer", self)
+        self._data_dock.setObjectName("DataExplorerDock")
+        self._data_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self._data_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self._data_dock.setWidget(self._data_tabs)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._data_dock)
+
+        self._control_dock = QDockWidget("Control Center", self)
+        self._control_dock.setObjectName("ControlCenterDock")
+        self._control_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self._control_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self._control_dock.setWidget(self._control_tabs)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
+        self.splitDockWidget(self._data_dock, self._control_dock, Qt.Vertical)
+
+        # ---------------- Bottom log ----------------
+        self._log_console = QPlainTextEdit()
+        self._log_console.setReadOnly(True)
+        self._log_console.setMinimumHeight(110)
+        self._log_console.setMaximumHeight(240)
+        self._log_console.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #111; border: 1px solid #333; color: #f1f1f1;"
+            "  font-family: Menlo, Consolas, monospace; font-size: 12px;"
+            "}"
+        )
+        self._batch_tab.log_message.connect(lambda msg: self._append_log(msg, "BATCH"))
+
+        # ---------------- Root layout ----------------
+        central = QWidget()
+        root = QVBoxLayout(central)
+        root.setContentsMargins(6, 6, 6, 0)
+        root.setSpacing(6)
+        root.addWidget(self._top_tabs, stretch=0)
+        root.addWidget(self._editor_tab, stretch=1)
+        root.addWidget(self._log_console, stretch=0)
+        self.setCentralWidget(central)
+
+        self._reset_layout()
+        self._append_log("UI initialized. Open an SWC file from File menu.", "INFO")
+
+    def _build_top_tabs(self) -> QTabWidget:
+        top_bg = "#f2f2f2"
+        top_fg = "#222222"
+        top_border = "#c7c7c7"
+        top_hover = "#e9e9e9"
+        tabs = QTabWidget()
+        tabs.setDocumentMode(True)
+        tabs.setElideMode(Qt.ElideRight)
+        tabs.setStyleSheet(
+            "QTabWidget::pane {"
+            f"  border: 1px solid {top_border}; background: {top_bg};"
+            "}"
+            "QTabBar::tab {"
+            f"  padding: 6px 16px; font-weight: 600; color: {top_fg};"
+            f"  background: {top_bg}; border: 1px solid {top_border};"
+            "  border-bottom: none; margin-right: 1px;"
+            "}"
+            "QTabBar::tab:selected {"
+            f"  background: {top_bg};"
+            "}"
+            "QTabBar::tab:hover {"
+            f"  background: {top_hover};"
+            "}"
+        )
+
+        # Home tab: classic dropdown menus.
+        home_page = QWidget()
+        home_page.setStyleSheet(f"background: {top_bg};")
+        home_layout = QVBoxLayout(home_page)
+        home_layout.setContentsMargins(0, 0, 0, 0)
+        home_layout.setSpacing(0)
+
+        self._home_menu_bar = QMenuBar(home_page)
+        self._home_menu_bar.setNativeMenuBar(False)
+        self._home_menu_bar.setStyleSheet(
+            "QMenuBar {"
+            f"  background: {top_bg}; border-bottom: 1px solid {top_border}; color: {top_fg};"
+            "}"
+            "QMenuBar::item {"
+            "  padding: 6px 12px; background: transparent;"
+            "}"
+            "QMenuBar::item:selected {"
+            f"  background: {top_hover};"
+            "}"
+            "QMenu {"
+            f"  background: {top_bg}; color: {top_fg}; border: 1px solid {top_border};"
+            "}"
+            "QMenu::item {"
+            "  padding: 6px 20px 6px 24px; background: transparent;"
+            "}"
+            "QMenu::item:selected {"
+            f"  background: {top_hover};"
+            "}"
+        )
+        self._populate_home_menus(self._home_menu_bar)
+        home_layout.addWidget(self._home_menu_bar, stretch=0)
+
+        # Tools tab: feature buttons.
+        tools_page = QWidget()
+        tools_page.setStyleSheet(
+            "QWidget {"
+            f"  background: {top_bg}; color: {top_fg};"
+            "}"
+            "QPushButton {"
+            f"  background: {top_bg}; color: {top_fg}; border: 1px solid {top_border};"
+            "  border-radius: 4px; padding: 6px 10px;"
+            "}"
+            "QPushButton:hover {"
+            f"  background: {top_hover};"
+            "}"
+            "QPushButton:pressed {"
+            f"  background: {top_hover};"
+            "}"
+        )
+        tools_layout = QHBoxLayout(tools_page)
+        tools_layout.setContentsMargins(8, 6, 8, 6)
+        tools_layout.setSpacing(8)
+
+        b_batch = QPushButton("Batch Process")
+        b_batch.clicked.connect(lambda: self._activate_feature("batch"))
+        tools_layout.addWidget(b_batch)
+
+        b_validation = QPushButton("Validation")
+        b_validation.clicked.connect(lambda: self._activate_feature("validation"))
+        tools_layout.addWidget(b_validation)
+
+        b_visual = QPushButton("Visualization")
+        b_visual.clicked.connect(lambda: self._activate_feature("visualization"))
+        tools_layout.addWidget(b_visual)
+
+        b_dendro = QPushButton("Dendrogram Editing")
+        b_dendro.clicked.connect(lambda: self._activate_feature("dendrogram"))
+        tools_layout.addWidget(b_dendro)
+
+        tools_layout.addStretch()
+        self._feature_label = QLabel("Active feature: None")
+        self._feature_label.setStyleSheet("font-size: 12px; color: #555;")
+        tools_layout.addWidget(self._feature_label)
+        self._current_file_label = QLabel("Current file: (none)")
+        self._current_file_label.setStyleSheet("font-size: 12px; color: #555;")
+        tools_layout.addWidget(self._current_file_label)
+
+        tabs.addTab(home_page, "Home")
+        tabs.addTab(tools_page, "Tools")
+        return tabs
+
+    def _populate_home_menus(self, menu: QMenuBar):
+        menu.clear()
+
+        # File
+        file_menu = menu.addMenu("File")
+        open_action = QAction("Open", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self._on_open)
         file_menu.addAction(open_action)
 
+        save_action = QAction("Save", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self._on_save)
+        file_menu.addAction(save_action)
+
+        save_as_action = QAction("Save As", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self._on_save_as)
+        file_menu.addAction(save_as_action)
+
+        export_action = QAction("Export", self)
+        export_action.triggered.connect(self._on_export)
+        file_menu.addAction(export_action)
+
+        self._recent_menu = file_menu.addMenu("Recent Files")
+        self._recent_menu.addAction("(empty)").setEnabled(False)
+
         file_menu.addSeparator()
+        exit_action = QAction("Exit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
 
-        quit_action = QAction("&Quit", self)
-        quit_action.setShortcut("Ctrl+Q")
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
+        # Edit
+        edit_menu = menu.addMenu("Edit")
+        undo_action = QAction("Undo", self)
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self._undo_edit)
+        edit_menu.addAction(undo_action)
 
-    def _build_ui(self):
-        self._tabs = QTabWidget()
+        redo_action = QAction("Redo", self)
+        redo_action.setShortcut("Ctrl+Shift+Z")
+        redo_action.triggered.connect(self._redo_edit)
+        edit_menu.addAction(redo_action)
 
-        # --- Tab 1: Batch Processing ---
-        self._batch_tab = BatchTabWidget()
-
-        # --- Tab 2: Format Validation ---
-        self._validation_tab = ValidationTabWidget(as_panel=False)
-
-        # --- Tab 3: Dendrogram Editor + 3D View ---
-        self._editor_tab = EditorTab()
-        self._editor_tab.df_changed.connect(self._on_editor_df_changed)
-
-        # --- Tab 4: Radii Cleaner ---
-        self._radii_tab = QWidget()
-        radii_layout = QVBoxLayout(self._radii_tab)
-        radii_layout.addWidget(QLabel("Radii Cleaner — Coming in Milestone 5."))
-        radii_layout.addStretch()
-
-        self._tabs.addTab(self._batch_tab, "Batch Processing")
-        self._tabs.addTab(self._validation_tab, "Format Validation")
-        self._tabs.addTab(self._editor_tab, "Dendrogram Editor")
-        self._tabs.addTab(self._radii_tab, "Radii Cleaner")
-
-        # Shared validation panel on the right side for non-validation tabs
-        self._validation_panel = ValidationTabWidget(as_panel=True)
-        self._tabs.currentChanged.connect(self._on_tab_changed)
-        self._tabs.setCurrentIndex(0)
-
-        # --- Central layout with drop zone + tabs ---
-        central = QWidget()
-        main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(8, 8, 8, 0)
-
-        # Drop zone / file info banner (clickable)
-        self._file_banner = QLabel(
-            "📂  Drag & drop an SWC file here, or click to browse"
+        pref_action = QAction("Preferences", self)
+        pref_action.triggered.connect(
+            lambda: self._append_log("Preferences dialog is not implemented yet.", "INFO")
         )
-        self._file_banner.setAlignment(Qt.AlignCenter)
-        self._file_banner.setCursor(Qt.PointingHandCursor)
-        self._file_banner.setStyleSheet(
-            "QLabel {"
-            "  border: 2px dashed #999; border-radius: 8px;"
-            "  padding: 18px; font-size: 15px; color: #555;"
-            "  background: #fafafa;"
-            "}"
-            "QLabel:hover {"
-            "  border-color: #4a9; background: #f0faf5;"
-            "}"
+        edit_menu.addAction(pref_action)
+
+        # View
+        view_menu = menu.addMenu("View")
+        show_log_action = QAction("Show/Hide Log", self)
+        show_log_action.triggered.connect(
+            lambda: self._toggle_log_panel(not self._log_console.isVisible())
         )
-        self._file_banner.setMinimumHeight(60)
-        self._file_banner.mousePressEvent = lambda e: self._on_open()
-        main_layout.addWidget(self._file_banner)
+        view_menu.addAction(show_log_action)
 
-        # Shared SWC table panel on the left side for all tabs
-        self._table_widget = SWCTableWidget()
+        view_menu.addSeparator()
+        cam_iso_action = QAction("Camera Isometric", self)
+        cam_iso_action.triggered.connect(lambda: self._set_camera("iso"))
+        view_menu.addAction(cam_iso_action)
+        cam_top_action = QAction("Camera Top", self)
+        cam_top_action.triggered.connect(lambda: self._set_camera("top"))
+        view_menu.addAction(cam_top_action)
+        cam_front_action = QAction("Camera Front", self)
+        cam_front_action.triggered.connect(lambda: self._set_camera("front"))
+        view_menu.addAction(cam_front_action)
+        cam_side_action = QAction("Camera Side", self)
+        cam_side_action.triggered.connect(lambda: self._set_camera("side"))
+        view_menu.addAction(cam_side_action)
 
-        tab_row = QWidget()
-        tab_row_layout = QHBoxLayout(tab_row)
-        tab_row_layout.setContentsMargins(0, 0, 0, 0)
-        tab_row_layout.setSpacing(8)
-        tab_row_layout.addWidget(self._table_widget)
-        tab_row_layout.addWidget(self._tabs, stretch=1)
-        tab_row_layout.addWidget(self._validation_panel)
-        main_layout.addWidget(tab_row, stretch=3)
+        # Window
+        window_menu = menu.addMenu("Window")
+        reset_layout_action = QAction("Reset Layout", self)
+        reset_layout_action.triggered.connect(self._reset_layout)
+        window_menu.addAction(reset_layout_action)
 
-        self.setCentralWidget(central)
-        self._on_tab_changed(self._tabs.currentIndex())
+        show_data_action = QAction("Show/Hide Data Explorer", self)
+        show_data_action.triggered.connect(
+            lambda: self._toggle_data_panel(not self._data_dock.isVisible())
+        )
+        window_menu.addAction(show_data_action)
+
+        show_control_action = QAction("Show/Hide Control Center", self)
+        show_control_action.triggered.connect(
+            lambda: self._toggle_control_panel(not self._control_dock.isVisible())
+        )
+        window_menu.addAction(show_control_action)
+
+        # Help
+        help_menu = menu.addMenu("Help")
+        quick_action = QAction("Quick Manual", self)
+        quick_action.triggered.connect(self._show_quick_manual)
+        help_menu.addAction(quick_action)
+        short_action = QAction("Shortcuts", self)
+        short_action.triggered.connect(self._show_shortcuts)
+        help_menu.addAction(short_action)
+        about_action = QAction("About", self)
+        about_action.triggered.connect(
+            lambda: self._append_log("SWC-QT — neuron visualization and editing workspace.", "INFO")
+        )
+        help_menu.addAction(about_action)
+
+    def _build_visualization_control_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        row1 = QHBoxLayout()
+        b_iso = QPushButton("Isometric")
+        b_iso.clicked.connect(lambda: self._set_camera("iso"))
+        row1.addWidget(b_iso)
+        b_top = QPushButton("Top")
+        b_top.clicked.connect(lambda: self._set_camera("top"))
+        row1.addWidget(b_top)
+        b_front = QPushButton("Front")
+        b_front.clicked.connect(lambda: self._set_camera("front"))
+        row1.addWidget(b_front)
+        b_side = QPushButton("Side")
+        b_side.clicked.connect(lambda: self._set_camera("side"))
+        row1.addWidget(b_side)
+        layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        b_reset = QPushButton("Reset Camera")
+        b_reset.clicked.connect(self._reset_camera)
+        row2.addWidget(b_reset)
+        row2.addWidget(QLabel("Render mode:"))
+        self._render_combo = QComboBox()
+        self._render_combo.addItem("Lines", Neuron3DWidget.MODE_LINES)
+        self._render_combo.addItem("Spheres", Neuron3DWidget.MODE_SPHERES)
+        self._render_combo.addItem("Frustum", Neuron3DWidget.MODE_FRUSTUM)
+        self._render_combo.currentIndexChanged.connect(self._on_render_mode_changed)
+        row2.addWidget(self._render_combo)
+        layout.addLayout(row2)
+
+        hint = QLabel(
+            "Visualization mode shows:\n"
+            "- one 3D view on top\n"
+            "- three 2D projections (top/front/side) below"
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size: 12px; color: #555;")
+        layout.addWidget(hint)
+        layout.addStretch()
+        return panel
 
     def _build_status_bar(self):
         self._status = QStatusBar()
         self.setStatusBar(self._status)
         self._status.showMessage("Ready — open an SWC file to start.")
 
+    def _set_control_tabs_for_feature(self, feature: str):
+        """Show only control tabs relevant to the active feature."""
+        key = (feature or "").strip().lower()
+        while self._control_tabs.count() > 0:
+            self._control_tabs.removeTab(0)
+
+        if key in ("", "none"):
+            return
+
+        if key == "batch":
+            self._control_tabs.addTab(self._batch_tab.split_tab_widget(), "Split")
+            self._control_tabs.addTab(self._batch_tab.auto_tab_widget(), "Auto Label")
+            self._control_tabs.addTab(self._batch_tab.radii_tab_widget(), "Radii Cleaning")
+            self._control_tabs.setCurrentIndex(0)
+            return
+
+        if key == "validation":
+            self._control_tabs.addTab(self._validation_tab, "Validation")
+            self._control_tabs.setCurrentWidget(self._validation_tab)
+            return
+
+        if key == "dendrogram":
+            self._control_tabs.addTab(self._dendro_controls, "Label Editing")
+            self._control_tabs.setCurrentWidget(self._dendro_controls)
+            return
+
+        # default: visualization
+        self._control_tabs.addTab(self._viz_control, "View Controls")
+        self._control_tabs.setCurrentWidget(self._viz_control)
+
+    # --------------------------------------------------------- Feature routing
+    def _activate_feature(self, name: str):
+        key = (name or "").strip().lower()
+        if key == "batch":
+            self._active_tool = "batch"
+            self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+            self._set_control_tabs_for_feature("batch")
+            self._control_dock.show()
+            self._feature_label.setText("Active feature: Batch Process")
+            self._append_log("Feature switched: Batch Process", "INFO")
+            return
+        if key == "validation":
+            self._active_tool = "validation"
+            self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+            self._set_control_tabs_for_feature("validation")
+            self._control_dock.show()
+            self._feature_label.setText("Active feature: Validation")
+            self._append_log("Feature switched: Validation", "INFO")
+            return
+        if key == "visualization":
+            self._active_tool = "visualization"
+            self._editor_tab.set_mode(EditorTab.MODE_VIS)
+            self._set_control_tabs_for_feature("visualization")
+            self._control_dock.show()
+            self._feature_label.setText("Active feature: Visualization")
+            self._append_log("Feature switched: Visualization", "INFO")
+            return
+        if key == "dendrogram":
+            self._active_tool = "dendrogram"
+            self._editor_tab.set_mode(EditorTab.MODE_DENDRO)
+            self._set_control_tabs_for_feature("dendrogram")
+            self._control_dock.show()
+            self._feature_label.setText("Active feature: Dendrogram Editing")
+            self._append_log("Feature switched: Dendrogram Editing", "INFO")
+            return
+        self._active_tool = ""
+        self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+        self._set_control_tabs_for_feature("")
+        self._feature_label.setText("Active feature: None")
+        self._append_log("No active tool selected.", "INFO")
+
+    def _set_camera(self, preset: str):
+        self._editor_tab.set_camera_view(preset)
+        self._append_log(f"Camera preset: {preset}", "INFO")
+
+    def _reset_camera(self):
+        self._editor_tab.reset_camera()
+        self._append_log("Camera reset.", "INFO")
+
+    def _on_render_mode_changed(self, index: int):
+        mode = self._render_combo.currentData()
+        if mode is None:
+            return
+        self._editor_tab.set_render_mode(int(mode))
+        self._append_log(f"Render mode set to {self._render_combo.currentText()}.", "INFO")
+
     # --------------------------------------------------------- File loading
     def _on_open(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open SWC file", "",
-            "SWC Files (*.swc);;All Files (*)"
+            self, "Open SWC file", "", "SWC Files (*.swc);;All Files (*)"
         )
         if path:
             self._load_swc(path)
 
     def _load_swc(self, path: str):
-        """Parse SWC file and populate the UI."""
         try:
-            df = pd.read_csv(
-                path,
-                sep=r"\s+",
-                comment="#",
-                names=SWC_COLS,
-            )
-            # Basic validation
+            df = pd.read_csv(path, sep=r"\s+", comment="#", names=SWC_COLS)
             if df.empty:
-                QMessageBox.warning(self, "Empty file", f"{path} contains no data rows.")
+                self._append_log(f"Empty file: {path} contains no data rows.", "WARN")
                 return
 
-            # Ensure integer columns
             for col in ("id", "type", "parent"):
                 df[col] = df[col].astype(int)
 
             self._df = df
             self._filename = os.path.basename(path)
+            self._file_path = path
+            self._current_file_label.setText(f"Current file: {self._filename}")
 
-            # Update UI
             n_roots = int((df["parent"] == -1).sum())
             n_soma = int((df["type"] == 1).sum())
-            self._file_banner.setText(
-                f"📄 {self._filename}  —  {len(df)} nodes, {n_roots} root(s), {n_soma} soma node(s)"
-            )
-            self._file_banner.setStyleSheet(
-                "QLabel {"
-                "  border: 2px solid #4a9; border-radius: 8px;"
-                "  padding: 12px; font-size: 14px; color: #333;"
-                "  background: #e8f8f0;"
-                "}"
-            )
 
-            self._table_widget.load_dataframe(df)
+            self._table_widget.load_dataframe(df, self._filename)
+            self._update_info_label(df, n_roots, n_soma)
+            self._update_recent_files(path)
 
-            # Run validation
             self._validation_tab.load_swc(df, self._filename)
-            self._validation_panel.load_swc(df, self._filename)
-
-            # Load dendrogram + 3D view
             self._editor_tab.load_swc(df, self._filename)
+            if self._active_tool:
+                self._activate_feature(self._active_tool)
+            else:
+                self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+                self._set_control_tabs_for_feature("")
+                self._feature_label.setText("Active feature: None")
 
             self._status.showMessage(
                 f"Loaded {self._filename}: {len(df)} nodes, {n_roots} root(s), {n_soma} soma(s)",
                 5000,
             )
-
-            # Emit signal for other components
+            self._append_log(
+                f"Loaded {self._filename}: nodes={len(df)}, roots={n_roots}, soma={n_soma}",
+                "INFO",
+            )
             self.swc_loaded.emit(df, self._filename)
-
         except Exception as e:
-            QMessageBox.critical(self, "Error loading SWC", str(e))
+            self._append_log(f"Error loading SWC: {e}", "ERROR")
+
+    def _on_save(self):
+        if self._df is None or self._df.empty:
+            self._append_log("No SWC loaded. Nothing to save.", "WARN")
+            return
+        if not self._file_path:
+            self._on_save_as()
+            return
+        self._write_swc_file(self._file_path, self._df)
+        self._append_log(f"Saved {self._file_path}", "INFO")
+
+    def _on_save_as(self):
+        if self._df is None or self._df.empty:
+            self._append_log("No SWC loaded. Nothing to save.", "WARN")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save SWC As", self._filename or "edited.swc", "SWC Files (*.swc);;All Files (*)"
+        )
+        if not path:
+            self._append_log("Save As cancelled.", "INFO")
+            return
+        self._write_swc_file(path, self._df)
+        self._file_path = path
+        self._filename = os.path.basename(path)
+        self._current_file_label.setText(f"Current file: {self._filename}")
+        self._append_log(f"Saved As {path}", "INFO")
+        self._update_recent_files(path)
+
+    def _on_export(self):
+        if self._df is None or self._df.empty:
+            self._append_log("No SWC loaded. Nothing to export.", "WARN")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export SWC", f"export_{self._filename or 'swc'}.swc", "SWC Files (*.swc)"
+        )
+        if not path:
+            self._append_log("Export cancelled.", "INFO")
+            return
+        self._write_swc_file(path, self._df)
+        self._append_log(f"Exported {path}", "INFO")
+
+    def _write_swc_file(self, path: str, df: pd.DataFrame):
+        lines = ["# id type x y z radius parent"]
+        for _, row in df.iterrows():
+            lines.append(
+                f"{int(row['id'])} {int(row['type'])} "
+                f"{row['x']:.4f} {row['y']:.4f} {row['z']:.4f} "
+                f"{row['radius']:.4f} {int(row['parent'])}"
+            )
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
 
     # --------------------------------------------------- Drag & drop
     def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
-            if any(u.toLocalFile().lower().endswith(".swc") for u in urls):
-                event.acceptProposedAction()
+        event.ignore()
 
     def dropEvent(self, event: QDropEvent):
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if path.lower().endswith(".swc"):
-                self._load_swc(path)
-                break
+        event.ignore()
 
-    def _on_tab_changed(self, tab_index: int):
-        """Show side validation panel only on editor/radii tabs."""
-        self._validation_panel.setVisible(tab_index >= 2)
-
+    # --------------------------------------------------- Sync
     def _on_editor_df_changed(self, df: pd.DataFrame):
-        """Refresh table + validation when dendrogram edits modify SWC data."""
         self._df = df.copy()
-        self._table_widget.load_dataframe(self._df)
+        self._table_widget.load_dataframe(self._df, self._filename)
+        n_roots = int((self._df["parent"] == -1).sum())
+        n_soma = int((self._df["type"] == 1).sum())
+        self._update_info_label(self._df, n_roots, n_soma)
         self._validation_tab.load_swc(self._df, self._filename)
-        self._validation_panel.load_swc(self._df, self._filename)
+        self._append_log("Dendrogram edits applied to current SWC.", "INFO")
+
+    # --------------------------------------------------- Helpers
+    def _append_log(self, text: str, level: str = "INFO"):
+        stamp = datetime.now().strftime("%H:%M:%S")
+        line = f"[{stamp}] [{level}] {text}".rstrip()
+        self._log_console.appendPlainText(line)
+        sb = self._log_console.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _update_info_label(self, df: pd.DataFrame, n_roots: int, n_soma: int):
+        self._info_label.setText(
+            f"File: {self._filename}\n"
+            f"Nodes: {len(df)}\n"
+            f"Roots: {n_roots}\n"
+            f"Soma nodes: {n_soma}\n"
+            f"Type counts:\n"
+            f"  Soma (1): {(df['type'] == 1).sum()}\n"
+            f"  Axon (2): {(df['type'] == 2).sum()}\n"
+            f"  Basal (3): {(df['type'] == 3).sum()}\n"
+            f"  Apical (4): {(df['type'] == 4).sum()}"
+        )
+
+    def _update_recent_files(self, path: str):
+        path = os.path.abspath(path)
+        if path in self._recent_paths:
+            self._recent_paths.remove(path)
+        self._recent_paths.insert(0, path)
+        self._recent_paths = self._recent_paths[:10]
+
+        self._recent_menu.clear()
+        for p in self._recent_paths:
+            act = QAction(p, self)
+            act.triggered.connect(lambda _=False, sp=p: self._load_swc(sp))
+            self._recent_menu.addAction(act)
+
+    def _reset_layout(self):
+        self._data_dock.show()
+        self._control_dock.show()
+        self.resizeDocks([self._data_dock, self._control_dock], [470, 360], Qt.Vertical)
+        self.resizeDocks([self._data_dock], [420], Qt.Horizontal)
+        self._append_log("Layout reset.", "INFO")
+
+    def _toggle_data_panel(self, checked: bool):
+        self._data_dock.setVisible(bool(checked))
+
+    def _toggle_control_panel(self, checked: bool):
+        self._control_dock.setVisible(bool(checked))
+
+    def _toggle_log_panel(self, checked: bool):
+        self._log_console.setVisible(bool(checked))
+
+    def _undo_edit(self):
+        if hasattr(self._editor_tab, "_dendro"):
+            self._editor_tab._dendro._undo_stack.undo()
+            self._append_log("Undo.", "INFO")
+
+    def _redo_edit(self):
+        if hasattr(self._editor_tab, "_dendro"):
+            self._editor_tab._dendro._undo_stack.redo()
+            self._append_log("Redo.", "INFO")
+
+    # ---------------- Help ----------------
+    def _show_quick_manual(self):
+        text = (
+            "Quick Manual:\n"
+            "1) Top tab 'Home': File/Edit/View/Window/Help dropdown menus.\n"
+            "2) Top tab 'Tools': Batch, Validation, Visualization, Dendrogram Editing buttons.\n"
+            "3) Data Explorer and Control Center are dock windows (close, float, resize, move).\n"
+            "4) Control Center is empty until a tool is selected.\n"
+            "5) After selection, Control Center tabs switch to that feature only.\n"
+            "   Batch Process includes: Select & Process, Auto Labeling, Radii Cleaning.\n"
+            "6) Canvas keeps the 3D view by default once a file is loaded.\n"
+            "7) Bottom panel shows all logs and warnings."
+        )
+        self._append_log(text, "HELP")
+
+    def _show_shortcuts(self):
+        text = (
+            "Shortcuts:\n"
+            "Ctrl+O: Open\n"
+            "Ctrl+S: Save\n"
+            "Ctrl+Shift+S: Save As\n"
+            "Ctrl+Z: Undo\n"
+            "Ctrl+Shift+Z: Redo"
+        )
+        self._append_log(text, "HELP")

@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QBrush, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox, QSizePolicy,
+    QTableWidget, QTableWidgetItem, QFileDialog, QSizePolicy,
 )
 
 from validation_core import run_per_tree_validation, _split_swc_by_soma_roots
@@ -349,10 +349,14 @@ class ValidationTabWidget(QWidget):
     def _on_save_all(self):
         """Save all trees as individual SWC files to a folder."""
         if not self._trees:
+            self._save_status.setText("No trees available to save.")
+            self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
             return
 
         folder = QFileDialog.getExistingDirectory(self, "Choose folder to save all trees")
         if not folder:
+            self._save_status.setText("Save all trees cancelled.")
+            self._save_status.setStyleSheet("color: #777; font-size: 12px;")
             return
 
         try:
@@ -367,11 +371,14 @@ class ValidationTabWidget(QWidget):
             self._save_status.setText(f"✓ Saved {saved} tree(s) to {folder}")
             self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
         except Exception as e:
-            QMessageBox.critical(self, "Save error", str(e))
+            self._save_status.setText(f"Save error: {e}")
+            self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
     def _on_export_json(self):
         """Export validation results as JSON."""
         if not self._json_rows:
+            self._save_status.setText("No validation results to export.")
+            self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -379,6 +386,8 @@ class ValidationTabWidget(QWidget):
             "JSON Files (*.json);;All Files (*)"
         )
         if not path:
+            self._save_status.setText("Export validation JSON cancelled.")
+            self._save_status.setStyleSheet("color: #777; font-size: 12px;")
             return
 
         try:
@@ -387,4 +396,5 @@ class ValidationTabWidget(QWidget):
             self._save_status.setText(f"✓ Exported JSON to {os.path.basename(path)}")
             self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
         except Exception as e:
-            QMessageBox.critical(self, "Export error", str(e))
+            self._save_status.setText(f"Export error: {e}")
+            self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")

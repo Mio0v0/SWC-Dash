@@ -74,36 +74,44 @@ class _SWCTableModel(QAbstractTableModel):
 class SWCTableWidget(QWidget):
     """Encapsulates a collapsible SWC table panel."""
 
-    EXPANDED_WIDTH = 360
+    EXPANDED_MIN_WIDTH = 260
     COLLAPSED_WIDTH = 72
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_collapsed = False
         self._has_data = False
+        self._filename = "No SWC loaded"
 
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(4, 2, 4, 4)
+        layout.setSpacing(4)
 
-        header_layout = QHBoxLayout()
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
         header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+
+        self._toggle_btn = QPushButton("▾")
+        self._toggle_btn.setFixedWidth(20)
+        self._toggle_btn.setToolTip("Collapse/expand SWC rows")
+        self._toggle_btn.setStyleSheet(
+            "QPushButton { border: none; padding: 0px; color: #444; font-weight: 700; }"
+            "QPushButton:hover { color: #111; }"
+        )
+        self._toggle_btn.clicked.connect(self._toggle_collapsed)
+        header_layout.addWidget(self._toggle_btn)
 
         self._title = QLabel("SWC Data")
         self._title.setStyleSheet(
             "font-weight: 600; font-size: 13px; color: #444; padding: 4px 0;"
         )
+        self._title.mousePressEvent = lambda _e: self._toggle_collapsed()
         header_layout.addWidget(self._title)
         header_layout.addStretch()
-
-        self._toggle_btn = QPushButton("<")
-        self._toggle_btn.setFixedWidth(28)
-        self._toggle_btn.setToolTip("Minimize SWC panel")
-        self._toggle_btn.clicked.connect(self._toggle_collapsed)
-        header_layout.addWidget(self._toggle_btn)
-        layout.addLayout(header_layout)
+        layout.addWidget(header_container, stretch=0)
 
         self._model = _SWCTableModel()
         self._view = QTableView()
@@ -118,18 +126,30 @@ class SWCTableWidget(QWidget):
             "QTableView { font-size: 13px; gridline-color: #ddd; }"
             "QTableView::item:selected { background: #cde8ff; color: #000; }"
         )
-        layout.addWidget(self._view)
 
         self._empty = QLabel("Load an SWC file to view node table.")
         self._empty.setAlignment(Qt.AlignCenter)
         self._empty.setStyleSheet("color: #777; font-size: 12px;")
-        layout.addWidget(self._empty)
+
+        self._body = QWidget()
+        body_layout = QVBoxLayout(self._body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(4)
+        body_layout.addWidget(self._view, stretch=1)
+        body_layout.addWidget(self._empty, stretch=1)
+        layout.addWidget(self._body, stretch=1)
+
+        # Used only in collapsed mode to keep filename row pinned to top.
+        self._collapsed_spacer = QWidget()
+        self._collapsed_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._collapsed_spacer.setVisible(False)
+        layout.addWidget(self._collapsed_spacer, stretch=1)
 
         self._apply_panel_mode()
 
-    def load_dataframe(self, df: pd.DataFrame):
+    def load_dataframe(self, df: pd.DataFrame, filename: str = ""):
         self._model.set_dataframe(df)
-        self._title.setText(f"SWC Data — {len(df)} rows")
+        self._filename = filename or self._filename
         self._has_data = True
 
         # Auto-resize columns to content
@@ -144,19 +164,24 @@ class SWCTableWidget(QWidget):
 
     def _apply_panel_mode(self):
         if self._is_collapsed:
-            self.setMinimumWidth(self.COLLAPSED_WIDTH)
-            self.setMaximumWidth(self.COLLAPSED_WIDTH)
-            self._title.setVisible(False)
-            self._toggle_btn.setText(">")
-            self._toggle_btn.setToolTip("Expand SWC panel")
-            self._view.setVisible(False)
-            self._empty.setVisible(False)
+            self.setMinimumWidth(180)
+            self.setMaximumWidth(16777215)
+            self._title.setVisible(True)
+            self._title.setText(f"{self._filename}")
+            self._toggle_btn.setText("▸")
+            self._toggle_btn.setToolTip("Expand to show SWC rows")
+            self._body.setVisible(False)
+            self._collapsed_spacer.setVisible(True)
             return
 
-        self.setMinimumWidth(self.EXPANDED_WIDTH)
-        self.setMaximumWidth(self.EXPANDED_WIDTH)
+        self.setMinimumWidth(self.EXPANDED_MIN_WIDTH)
+        self.setMaximumWidth(16777215)
         self._title.setVisible(True)
-        self._toggle_btn.setText("<")
-        self._toggle_btn.setToolTip("Minimize SWC panel")
+        row_info = f"{self._model.rowCount()} rows" if self._has_data else "no rows"
+        self._title.setText(f"{self._filename}  ({row_info})")
+        self._toggle_btn.setText("▾")
+        self._toggle_btn.setToolTip("Collapse to filename only")
+        self._body.setVisible(True)
+        self._collapsed_spacer.setVisible(False)
         self._view.setVisible(self._has_data)
         self._empty.setVisible(not self._has_data)
