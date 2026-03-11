@@ -650,9 +650,14 @@ class SWCMainWindow(QMainWindow):
     def _reset_layout(self):
         self._data_dock.show()
         self._control_dock.show()
-        self.resizeDocks([self._data_dock, self._control_dock], [470, 360], Qt.Vertical)
-        self.resizeDocks([self._data_dock], [420], Qt.Horizontal)
-        self._append_log("Layout reset.", "INFO")
+        # Don't force exact dock sizes here; allow users to drag boundaries.
+        try:
+            # Enable animated/interactive docks so the sash is draggable.
+            self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowNestedDocks | QMainWindow.AllowTabbedDocks)
+        except Exception:
+            # Fallback: nothing to do if setDockOptions unavailable
+            pass
+        self._append_log("Layout reset (docks movable).", "INFO")
 
     def _toggle_data_panel(self, checked: bool):
         self._data_dock.setVisible(bool(checked))
