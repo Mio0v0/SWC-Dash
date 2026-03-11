@@ -1,4 +1,9 @@
-"""Native rule-based SWC batch processing utilities."""
+"""Native rule-based SWC batch processing utilities.
+
+This module supports loading an external JSON configuration (swctools/config/auto_rules.json)
+which exposes the numeric weights, thresholds and options used by the auto-labeling
+algorithm. The GUI presents this file to users for inspection and editing.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,61 @@ from pathlib import Path
 from typing import Any
 import zipfile
 import math
+import json
+
+
+# Configuration: attempt to load JSON from the package-level config folder.
+_DEFAULT_CFG = None
+_CFG_PATH = Path(__file__).resolve().parents[1] / "config" / "auto_rules.json"
+
+
+def _load_cfg():
+    global _DEFAULT_CFG
+    if _DEFAULT_CFG is not None:
+        return _DEFAULT_CFG
+    try:
+        with open(_CFG_PATH, "r", encoding="utf-8") as fh:
+            _DEFAULT_CFG = json.load(fh)
+            return _DEFAULT_CFG
+    except Exception:
+        # Fallback default values (mirror the previous hard-coded defaults)
+        _DEFAULT_CFG = {
+            "class_labels": {"1": "soma", "2": "axon", "3": "basal", "4": "apical"},
+            "branch_score_weights": {
+                "axon": {"path": 0.32, "radial": 0.24, "radius": 0.20, "branch": 0.14, "prior": 0.10},
+                "apical": {"z": 0.30, "path": 0.22, "radius": 0.18, "branch": 0.15, "prior": 0.15},
+                "basal": {"z": 0.30, "branch": 0.22, "radius": 0.18, "path": 0.15, "prior": 0.15},
+            },
+            "ml_blend": 0.28,
+            "ml_base_weight": 0.72,
+            "seed_prior_threshold": 0.55,
+            "assign_missing": {"min_score": 0.58, "min_gain": -0.06},
+            "smoothing": {"maj_fraction": 0.67, "flip_margin": 0.10},
+            "propagation_weights": {"self": 0.35, "parent": 0.35, "children": 0.20, "branch_prior": 0.30, "iterations": 4},
+            "radius": {"copy_parent_if_zero": True},
+        }
+        return _DEFAULT_CFG
+
+
+def get_config() -> dict:
+    """Return the active configuration dict (loaded from JSON if available)."""
+    return _load_cfg()
+
+
+def save_config(cfg: dict) -> None:
+    """Save the provided config dict back to the JSON config file path.
+
+    This writes atomically.
+    """
+    try:
+        tmp = _CFG_PATH.with_suffix(".tmp.json")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2, sort_keys=True)
+        tmp.replace(_CFG_PATH)
+        # reload cache
+        _load_cfg()
+    except Exception:
+        pass
 
 
 @dataclass
@@ -245,6 +305,8 @@ def _branch_scores(
 
     scores: dict[int, dict[int, float]] = {}
     features: dict[int, tuple[float, float, float, float, float]] = {}
+    cfg = _load_cfg()
+    weights = cfg.get("branch_score_weights", {})
     for bid in branch_nodes:
         features[bid] = (
             n_path.get(bid, 0.5),
@@ -257,28 +319,31 @@ def _branch_scores(
         for cls in enabled_neurites:
             prior = existing_ratio.get((bid, cls), 0.0)
             if cls == 2:  # axon
+                w = weights.get("axon", {})
                 s = (
-                    0.32 * n_path.get(bid, 0.5)
-                    + 0.24 * n_radial.get(bid, 0.5)
-                    + 0.20 * (1.0 - n_radius.get(bid, 0.5))
-                    + 0.14 * (1.0 - n_branch.get(bid, 0.5))
-                    + 0.10 * prior
+                    w.get("path", 0.32) * n_path.get(bid, 0.5)
+                    + w.get("radial", 0.24) * n_radial.get(bid, 0.5)
+                    + w.get("radius", 0.20) * (1.0 - n_radius.get(bid, 0.5))
+                    + w.get("branch", 0.14) * (1.0 - n_branch.get(bid, 0.5))
+                    + w.get("prior", 0.10) * prior
                 )
             elif cls == 4:  # apical
+                w = weights.get("apical", {})
                 s = (
-                    0.30 * n_z.get(bid, 0.5)
-                    + 0.22 * n_path.get(bid, 0.5)
-                    + 0.18 * n_radius.get(bid, 0.5)
-                    + 0.15 * n_branch.get(bid, 0.5)
-                    + 0.15 * prior
+                    w.get("z", 0.30) * n_z.get(bid, 0.5)
+                    + w.get("path", 0.22) * n_path.get(bid, 0.5)
+                    + w.get("radius", 0.18) * n_radius.get(bid, 0.5)
+                    + w.get("branch", 0.15) * n_branch.get(bid, 0.5)
+                    + w.get("prior", 0.15) * prior
                 )
             else:  # basal
+                w = weights.get("basal", {})
                 s = (
-                    0.30 * (1.0 - n_z.get(bid, 0.5))
-                    + 0.22 * n_branch.get(bid, 0.5)
-                    + 0.18 * n_radius.get(bid, 0.5)
-                    + 0.15 * n_path.get(bid, 0.5)
-                    + 0.15 * prior
+                    w.get("z", 0.30) * (1.0 - n_z.get(bid, 0.5))
+                    + w.get("branch", 0.22) * n_branch.get(bid, 0.5)
+                    + w.get("radius", 0.18) * n_radius.get(bid, 0.5)
+                    + w.get("path", 0.15) * n_path.get(bid, 0.5)
+                    + w.get("prior", 0.15) * prior
                 )
             br_scores[cls] = s
         scores[bid] = br_scores
@@ -313,12 +378,14 @@ def _ml_refine_scores(
     if not branch_ids:
         return scores
 
-    # Seed branches from confident existing labels.
+    # Load thresholds from config and seed branches from confident existing labels.
+    cfg = _load_cfg()
     seed_map: dict[int, list[int]] = {c: [] for c in classes}
+    seed_prior_threshold = float(cfg.get("seed_prior_threshold", 0.55))
     for bid in branch_ids:
         priors = {c: existing_ratio.get((bid, c), 0.0) for c in classes}
         best_c = max(classes, key=lambda c: priors[c])
-        if priors[best_c] >= 0.55:
+        if priors[best_c] >= seed_prior_threshold:
             seed_map[best_c].append(bid)
 
     # Fallback seed per class from current rule score.
@@ -354,7 +421,9 @@ def _ml_refine_scores(
                 out[bid][c] = base
                 continue
             sim = _euclid_similarity(fv, proto)
-            out[bid][c] = 0.72 * base + 0.28 * sim
+            ml_blend = float(cfg.get("ml_blend", 0.28))
+            ml_base = float(cfg.get("ml_base_weight", 0.72))
+            out[bid][c] = ml_base * base + ml_blend * sim
     return out
 
 
@@ -396,7 +465,10 @@ def _assign_branches(
                     best_need_score = need_s
                     best_bid = bid
             # Do not force class presence without sufficient support.
-            if best_bid is not None and (best_need_score >= 0.58 and best_gain >= -0.06):
+            assign_cfg = _load_cfg().get("assign_missing", {})
+            min_score = float(assign_cfg.get("min_score", 0.58))
+            min_gain = float(assign_cfg.get("min_gain", -0.06))
+            if best_bid is not None and (best_need_score >= min_score and best_gain >= min_gain):
                 assign[best_bid] = need
     return assign
 
@@ -433,13 +505,16 @@ def _smooth_branch_labels(
         maj_cls, maj_count = max(counts.items(), key=lambda kv: kv[1])
         if maj_cls == cur_cls:
             continue
-        if maj_count / max(1, len(sibs)) < 0.67:
+        smooth_cfg = _load_cfg().get("smoothing", {})
+        maj_frac = float(smooth_cfg.get("maj_fraction", 0.67))
+        flip_margin = float(smooth_cfg.get("flip_margin", 0.10))
+        if maj_count / max(1, len(sibs)) < maj_frac:
             continue
 
         cur_score = scores.get(bid, {}).get(cur_cls, 0.0)
         maj_score = scores.get(bid, {}).get(maj_cls, 0.0)
         # Flip isolated outliers when current label confidence is not clearly stronger.
-        if cur_score - maj_score < 0.10:
+        if cur_score - maj_score < flip_margin:
             out[bid] = maj_cls
 
     return out
@@ -486,28 +561,34 @@ def _apply_rules(rows: list[dict[str, Any]], opts: RuleBatchOptions) -> tuple[li
                 types[i] = cls
 
         # Graph label propagation (semi-supervised smoothing with branch priors).
-        for _ in range(4):
+        prop_cfg = _load_cfg().get("propagation_weights", {})
+        w_self = float(prop_cfg.get("self", 0.35))
+        w_parent = float(prop_cfg.get("parent", 0.35))
+        w_children_total = float(prop_cfg.get("children", 0.20))
+        w_branch_prior = float(prop_cfg.get("branch_prior", 0.30))
+        prop_iters = int(prop_cfg.get("iterations", 4))
+
+        for _ in range(prop_iters):
             new_types = list(types)
             for idx in order:
                 if opts.soma and int(types[idx]) == 1:
                     continue
                 if idx < len(node_branch) and node_branch[idx] == -1:
                     continue
-
                 votes: dict[int, float] = {c: 0.0 for c in enabled_neurites}
                 cur = int(types[idx])
                 if cur in votes:
-                    votes[cur] += 0.35
+                    votes[cur] += w_self
 
                 pidx = parent_idx[idx]
                 if pidx is not None:
                     pt = int(types[pidx])
                     if pt in votes:
-                        votes[pt] += 0.35
+                        votes[pt] += w_parent
 
                 ch = children[idx]
                 if ch:
-                    w = 0.20 / len(ch)
+                    w = (w_children_total / len(ch)) if len(ch) > 0 else 0.0
                     for c in ch:
                         ct = int(types[c])
                         if ct in votes:
@@ -515,7 +596,7 @@ def _apply_rules(rows: list[dict[str, Any]], opts: RuleBatchOptions) -> tuple[li
 
                 bid = node_branch[idx] if idx < len(node_branch) else -1
                 if bid in branch_class:
-                    votes[branch_class[bid]] = votes.get(branch_class[bid], 0.0) + 0.30
+                    votes[branch_class[bid]] = votes.get(branch_class[bid], 0.0) + w_branch_prior
 
                 if votes:
                     best = max(votes.items(), key=lambda kv: kv[1])[0]
@@ -528,14 +609,17 @@ def _apply_rules(rows: list[dict[str, Any]], opts: RuleBatchOptions) -> tuple[li
                 if int(row["parent"]) == -1:
                     types[i] = 1
 
-    # Radius rule: copy parent radius for zero/non-positive values.
+    # Radius rule: copy parent radius for zero/non-positive values (configurable).
     if opts.rad:
-        for idx in order:
-            pidx = parent_idx[idx]
-            if pidx is None:
-                continue
-            if radii[idx] <= 0 and radii[pidx] > 0:
-                radii[idx] = radii[pidx]
+        radius_cfg = _load_cfg().get("radius", {})
+        copy_parent = bool(radius_cfg.get("copy_parent_if_zero", True))
+        if copy_parent:
+            for idx in order:
+                pidx = parent_idx[idx]
+                if pidx is None:
+                    continue
+                if radii[idx] <= 0 and radii[pidx] > 0:
+                    radii[idx] = radii[pidx]
 
     type_changes = sum(1 for old, new in zip(orig_types, types) if int(old) != int(new))
     radius_changes = sum(1 for old, new in zip(orig_radii, radii) if float(old) != float(new))

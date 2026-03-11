@@ -13,6 +13,7 @@ from pathlib import Path
 
 # Import validation implementation from the GUI package (moved SWC-QT code)
 from swctools.gui import validation_core as gui_validation
+from swctools.gui import rule_batch_processor as rbp
 
 
 def main(argv=None):
@@ -22,6 +23,7 @@ def main(argv=None):
 
     v = sub.add_parser("validate", help="Validate an SWC file and print results")
     v.add_argument("file", type=Path)
+    s = sub.add_parser("show-rules", help="Print the auto-labeling rules JSON used by the GUI/CLI")
 
     args = p.parse_args(argv)
     if args.cmd == "validate":
@@ -34,6 +36,12 @@ def main(argv=None):
         for r in rows:
             status = r["status"]
             print(f"{r['check']}: {status}")
+        return 0
+    if args.cmd == "show-rules":
+        cfg = rbp.get_config()
+        import json
+
+        print(json.dumps(cfg, indent=2, sort_keys=True))
         return 0
 
     p.print_help()

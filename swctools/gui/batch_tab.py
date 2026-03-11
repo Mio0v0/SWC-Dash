@@ -17,6 +17,11 @@ from PySide6.QtWidgets import (
 
 from .rule_batch_processor import RuleBatchOptions, run_rule_batch
 from .validation_core import _split_swc_by_soma_roots
+import json
+from pathlib import Path
+
+# Config path (package-level)
+_CFG_PATH = Path(__file__).resolve().parents[1] / "config" / "auto_rules.json"
 
 
 class BatchTabWidget(QWidget):
@@ -70,9 +75,16 @@ class BatchTabWidget(QWidget):
         return page
 
     def _build_auto_page(self) -> QWidget:
+        # Build a two-column layout: controls on the left, a rules/decision panel on the right
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(8, 8, 8, 8)
+        root = QHBoxLayout(page)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+
+        # Left column: controls
+        left = QWidget()
+        layout = QVBoxLayout(left)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
         desc = QLabel("Auto labeling with morphology rules for all SWC files in a selected folder.")
@@ -109,6 +121,68 @@ class BatchTabWidget(QWidget):
 
         self._auto_status = self._new_status_box()
         layout.addWidget(self._auto_status, stretch=1)
+
+        # Right column: Rules / decision panel (collapsible)
+        right = QWidget()
+        r_layout = QVBoxLayout(right)
+        r_layout.setContentsMargins(0, 0, 0, 0)
+        r_layout.setSpacing(6)
+
+        title = QLabel("Decision engine — auto-label rules")
+        title.setStyleSheet("font-weight: 700; font-size: 13px;")
+        r_layout.addWidget(title)
+
+        hint = QLabel(
+            "This panel shows the JSON configuration that controls the auto-labeling algorithm.\n"
+            "You can edit thresholds and weights and save to change behavior.\n\n"
+            "Decision summary:\n"
+            "1) Partition branches anchored at soma/roots.\n"
+            "2) Compute branch features (path length, radial extent, mean radius, branchiness, z-mean).\n"
+            "3) Score each branch for axon/apical/basal using weighted features + prior from existing labels.\n"
+            "4) Optionally refine scores via a nearest-centroid (ML) step seeded by confident branches.\n"
+            "5) Assign branch-level classes, smooth locally among siblings, then propagate labels to nodes using neighborhood votes.\n"
+            "6) Radius rule: copy parent radius into zero/invalid radii when enabled.\n"
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size: 12px; color: #444;")
+        r_layout.addWidget(hint)
+
+        self._rules_edit = QPlainTextEdit()
+        self._rules_edit.setReadOnly(True)
+        self._rules_edit.setMinimumWidth(420)
+        self._rules_edit.setMaximumWidth(800)
+        r_layout.addWidget(self._rules_edit, stretch=1)
+
+        btn_row = QHBoxLayout()
+        self._btn_edit_rules = QPushButton("Edit")
+        self._btn_edit_rules.clicked.connect(self._on_toggle_edit_rules)
+        btn_row.addWidget(self._btn_edit_rules)
+
+        self._btn_save_rules = QPushButton("Save")
+        self._btn_save_rules.clicked.connect(self._on_save_rules)
+        self._btn_save_rules.setEnabled(False)
+        btn_row.addWidget(self._btn_save_rules)
+
+        self._btn_reload_rules = QPushButton("Reload")
+        self._btn_reload_rules.clicked.connect(self._load_rules_text)
+        btn_row.addWidget(self._btn_reload_rules)
+
+        self._btn_open_editor = QPushButton("Open in Editor")
+        self._btn_open_editor.clicked.connect(self._on_open_in_editor)
+        btn_row.addWidget(self._btn_open_editor)
+
+        self._btn_toggle_rules = QPushButton("Hide")
+        self._btn_toggle_rules.clicked.connect(lambda: right.setVisible(not right.isVisible()))
+        btn_row.addWidget(self._btn_toggle_rules)
+
+        r_layout.addLayout(btn_row)
+
+        # Load initial rules text
+        self._load_rules_text()
+
+        # Assemble columns
+        root.addWidget(left, stretch=1)
+        root.addWidget(right, stretch=0)
         return page
 
     def _build_radii_page(self) -> QWidget:
@@ -171,6 +245,68 @@ class BatchTabWidget(QWidget):
             if cb.isChecked():
                 flags.append(cb.text())
         return flags
+
+    # ---------------- Rules editor helpers ----------------
+    def _load_rules_text(self):
+        try:
+            if _CFG_PATH.exists():
+                txt = _CFG_PATH.read_text(encoding="utf-8")
+            else:
+                txt = "{}"
+        except Exception as e:
+            txt = f"// Error loading rules: {e}\n"
+        # Pretty-print JSON if possible
+        try:
+            j = json.loads(txt)
+            pretty = json.dumps(j, indent=2, sort_keys=True)
+            self._rules_edit.setPlainText(pretty)
+        except Exception:
+            self._rules_edit.setPlainText(txt)
+
+    def _on_toggle_edit_rules(self):
+        if self._rules_edit.isReadOnly():
+            self._rules_edit.setReadOnly(False)
+            self._btn_save_rules.setEnabled(True)
+            self._btn_edit_rules.setText("Cancel")
+        else:
+            self._rules_edit.setReadOnly(True)
+            self._btn_save_rules.setEnabled(False)
+            self._btn_edit_rules.setText("Edit")
+            # reload original file to discard edits
+            self._load_rules_text()
+
+    def _on_save_rules(self):
+        # Validate JSON then save
+        txt = self._rules_edit.toPlainText()
+        try:
+            j = json.loads(txt)
+        except Exception as e:
+            self._set_status(f"Failed to parse rules JSON: {e}")
+            return
+        try:
+            # atomic write
+            tmp = _CFG_PATH.with_suffix(".tmp.json")
+            tmp.write_text(json.dumps(j, indent=2, sort_keys=True), encoding="utf-8")
+            tmp.replace(_CFG_PATH)
+            self._set_status("Rules saved to config.")
+            # disable editing
+            self._rules_edit.setReadOnly(True)
+            self._btn_save_rules.setEnabled(False)
+            self._btn_edit_rules.setText("Edit")
+        except Exception as e:
+            self._set_status(f"Failed to save rules: {e}")
+
+    def _on_open_in_editor(self):
+        # Try to launch user's $EDITOR or macOS open
+        editor = os.environ.get("EDITOR")
+        try:
+            if editor:
+                os.execvp(editor, [editor, str(_CFG_PATH)])
+            else:
+                # macOS open
+                os.system(f"open '{_CFG_PATH}'")
+        except Exception as e:
+            self._set_status(f"Failed to open editor: {e}")
 
     def _on_split_folder(self):
         in_folder = QFileDialog.getExistingDirectory(self, "Choose folder containing SWC files")

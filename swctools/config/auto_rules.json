@@ -1,0 +1,23 @@
+{
+  "class_labels": {"1": "soma", "2": "axon", "3": "basal", "4": "apical"},
+
+  "branch_score_weights": {
+    "axon": {"path": 0.32, "radial": 0.24, "radius": 0.20, "branch": 0.14, "prior": 0.10},
+    "apical": {"z": 0.30, "path": 0.22, "radius": 0.18, "branch": 0.15, "prior": 0.15},
+    "basal": {"z": 0.30, "branch": 0.22, "radius": 0.18, "path": 0.15, "prior": 0.15}
+  },
+
+  "ml_blend": 0.28,
+  "ml_base_weight": 0.72,
+  "seed_prior_threshold": 0.55,
+
+  "assign_missing": {"min_score": 0.58, "min_gain": -0.06},
+
+  "smoothing": {"maj_fraction": 0.67, "flip_margin": 0.10},
+
+  "propagation_weights": {"self": 0.35, "parent": 0.35, "children": 0.20, "branch_prior": 0.30, "iterations": 4},
+
+  "radius": {"copy_parent_if_zero": true},
+
+  "notes": "This JSON controls the auto-labeling behavior (weights, thresholds, and options).\nEdit carefully; changes take effect when you save the file and re-run the batch or use the UI Save button."
+}
