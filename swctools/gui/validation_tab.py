@@ -235,7 +235,7 @@ class ValidationTabWidget(QWidget):
 
     def load_swc(self, df: pd.DataFrame, filename: str, auto_run: bool = True):
         self._source_stem = Path(filename or "file").stem or "file"
-        self._df = df.copy()
+        self._df = df
         self._swc_text = ""
         self._swc_dirty = True
         self._trees = []
