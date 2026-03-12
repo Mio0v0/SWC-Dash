@@ -61,20 +61,21 @@ class CheckResult:
         metrics: dict[str, Any] | None = None,
         error: bool = False,
     ) -> "CheckResult":
-        if error:
-            status = "error"
-        elif passed:
+        if passed:
             status = "pass"
         elif str(severity).lower() == "warning":
             status = "warning"
         else:
             status = "fail"
+        msg = str(message)
+        if error and not msg.lower().startswith("validation error:"):
+            msg = f"Validation error: {msg}"
         return CheckResult(
             key=key,
             label=label,
             passed=bool(passed),
             severity=str(severity),
-            message=str(message),
+            message=msg,
             failing_node_ids=list(failing_node_ids or []),
             failing_section_ids=list(failing_section_ids or []),
             metrics=dict(metrics or {}),
@@ -108,7 +109,7 @@ class ValidationReport:
     results: list[CheckResult] = field(default_factory=list)
 
     def summary(self) -> dict[str, int]:
-        out = {"pass": 0, "warning": 0, "fail": 0, "error": 0}
+        out = {"pass": 0, "warning": 0, "fail": 0}
         for r in self.results:
             if r.status in out:
                 out[r.status] += 1

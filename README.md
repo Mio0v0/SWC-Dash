@@ -25,13 +25,13 @@
 - Validation
   - `auto_fix`
 - Visualization
-  - `mesh_editing`
+  - `mesh_editing` (placeholder)
 - Morphology Editing
   - `dendrogram_editing`
 - Atlas Registration
   - `registration` (placeholder)
 - Analysis
-  - `summary` (starter implementation)
+  - `summary` (placeholder)
 
 Each feature stores defaults in `swctools/tools/<tool>/configs/<feature>.json`.
 
@@ -39,8 +39,12 @@ Each feature stores defaults in `swctools/tools/<tool>/configs/<feature>.json`.
 
 ```bash
 swctools batch split /path/to/folder
+# swctools batch split /Users/tuo/Desktop/SWC_Test
 swctools batch auto-typing /path/to/folder --soma --axon --basal
+# swctools batch auto-typing /Users/tuo/Desktop/SWC_Test --soma --axon --basal
 swctools validation auto-fix /path/to/file.swc --write
+swctools validation run /path/to/file.swc
+# swctools validation run /Users/tuo/Desktop/SWC_Test/single_cell_labeled.swc
 swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write
 swctools plugins list
 ```

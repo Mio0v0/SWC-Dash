@@ -2,7 +2,6 @@
   "feature": "auto_fix",
   "enabled": true,
   "method": "default",
-  "profile": "default",
   "fixes": {
     "sanitize_invalid_types": true
   }

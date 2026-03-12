@@ -21,7 +21,6 @@ FEATURE_KEY = f"{TOOL}.{FEATURE}"
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "method": "default",
-    "profile": "default",
     "fixes": {
         "sanitize_invalid_types": True,
     },
@@ -29,10 +28,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 def _builtin_auto_fix_text(swc_text: str, config: dict[str, Any]) -> dict[str, Any]:
-    profile = str(config.get("profile", "default"))
     results, sanitized_bytes, rows = run_format_validation_from_text(swc_text)
     sanitized_text = sanitized_bytes.decode("utf-8", errors="ignore")
-    report = run_structured_validation(sanitized_text, profile=profile)
+    report = run_structured_validation(sanitized_text)
     return {
         "report": report.to_dict(),
         "results": results,

@@ -16,14 +16,12 @@ FEATURE_KEY = f"{TOOL}.{FEATURE}"
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "method": "default",
-    "profile": "default",
 }
 
 
 def _builtin_run(swc_text: str, config: dict[str, Any]):
-    profile = str(config.get("profile", "default"))
     overrides = config.get("config_overrides")
-    return run_validation_text(swc_text, profile=profile, config_overrides=overrides)
+    return run_validation_text(swc_text, config_overrides=overrides)
 
 
 register_builtin_method(FEATURE_KEY, "default", _builtin_run)
@@ -37,13 +35,10 @@ def get_config() -> dict[str, Any]:
 def validate_text(
     swc_text: str,
     *,
-    profile: str | None = None,
     config_overrides: dict | None = None,
     feature_overrides: dict | None = None,
 ):
     cfg = merge_config(get_config(), feature_overrides)
-    if profile:
-        cfg["profile"] = profile
     if config_overrides:
         cfg["config_overrides"] = dict(config_overrides)
     method = str(cfg.get("method", "default"))
@@ -54,7 +49,6 @@ def validate_text(
 def validate_file(
     path: str,
     *,
-    profile: str | None = None,
     config_overrides: dict | None = None,
     feature_overrides: dict | None = None,
 ):
@@ -64,7 +58,6 @@ def validate_file(
     text = fp.read_text(encoding="utf-8", errors="ignore")
     report = validate_text(
         text,
-        profile=profile,
         config_overrides=config_overrides,
         feature_overrides=feature_overrides,
     )

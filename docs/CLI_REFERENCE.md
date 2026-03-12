@@ -48,7 +48,12 @@ The value must be a JSON object.
 
 #### `swctools batch validate <folder> [--config-json JSON]`
 
-Runs batch validation over all SWC files in a folder.
+Runs batch validation over all SWC files in a folder using the same rule set as `validation run`.
+
+CLI prints:
+
+- pre-check summary (same rule text as Validation)
+- per-file validation summaries/details
 
 #### `swctools batch split <folder> [--config-json JSON]`
 
@@ -80,15 +85,15 @@ Cleans invalid radii in folder SWCs.
 
 ### Validation
 
-#### `swctools validation run <file.swc> [--profile default|strict|tolerant] [--config-json JSON]`
+#### `swctools validation run <file.swc> [--config-json JSON]`
 
 Runs structured validation checks and prints:
 
 - pre-check summary (rules + params)
 - result summary
-- detailed findings for warning/fail/error checks
+- detailed findings for warning/fail checks
 
-#### `swctools validation auto-fix <file.swc> [--write] [--out PATH] [--profile default|strict|tolerant] [--config-json JSON]`
+#### `swctools validation auto-fix <file.swc> [--write] [--out PATH] [--config-json JSON]`
 
 Runs auto-fix plus structured validation report.
 
@@ -143,7 +148,7 @@ Lists builtin and plugin method names currently registered.
 ```bash
 swctools batch split /path/to/folder
 swctools batch auto-typing /path/to/folder --soma --axon --basal
-swctools validation run /path/to/file.swc --profile default
+swctools validation run /path/to/file.swc
 swctools validation auto-fix /path/to/file.swc --write
 swctools visualization mesh-editing /path/to/file.swc --include-edges
 swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write

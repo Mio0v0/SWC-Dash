@@ -140,12 +140,16 @@ def _ensure_builtin_checks_registered() -> None:
 
 
 def load_validation_config(profile: str = "default", overrides: dict[str, Any] | None = None) -> dict[str, Any]:
-    p = _CFG_DIR / f"{profile}.json"
+    # Single validation profile: always use default.json.
+    _ = profile
+    p = _CFG_DIR / "default.json"
     if p.exists():
         base = json.loads(p.read_text(encoding="utf-8"))
     else:
         base = {"checks": {}}
-    return merge_config(base, overrides)
+    merged = merge_config(base, overrides)
+    merged["profile"] = "default"
+    return merged
 
 
 def build_precheck_summary(config: dict[str, Any]) -> list[PreCheckItem]:
@@ -251,4 +255,4 @@ def run_validation_text(
                 )
             )
 
-    return ValidationReport(profile=profile, precheck=precheck, results=results)
+    return ValidationReport(profile="default", precheck=precheck, results=results)

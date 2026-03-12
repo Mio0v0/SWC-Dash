@@ -1,7 +1,6 @@
 {
-  "profile": "default",
   "checks": {
-    "has_soma": {"enabled": true, "severity": "warning", "params": {}},
+    "has_soma": {"enabled": true, "severity": "error", "params": {}},
     "has_axon": {"enabled": true, "severity": "warning", "params": {}},
     "has_basal_dendrite": {"enabled": true, "severity": "warning", "params": {}},
     "has_apical_dendrite": {"enabled": true, "severity": "warning", "params": {}},

@@ -74,8 +74,6 @@ def _status_tag(status: str) -> str:
         return "PASS"
     if s == "warning":
         return "WARN"
-    if s == "error":
-        return "ERR"
     return "FAIL"
 
 
@@ -88,8 +86,7 @@ def _print_validation_results(report: dict) -> None:
         f"total={summary.get('total', 0)} "
         f"pass={summary.get('pass', 0)} "
         f"warning={summary.get('warning', 0)} "
-        f"fail={summary.get('fail', 0)} "
-        f"error={summary.get('error', 0)}"
+        f"fail={summary.get('fail', 0)}"
     )
     groups = group_rows_by_category(list(report.get("results", [])))
     for category, items in groups:
@@ -101,7 +98,7 @@ def _print_validation_results(report: dict) -> None:
     details = [
         r
         for r in report.get("results", [])
-        if r.get("status") in {"warning", "fail", "error"}
+        if r.get("status") in {"warning", "fail"}
     ]
     if details:
         print("")
@@ -120,6 +117,40 @@ def _print_validation_results(report: dict) -> None:
 def _print_auto_typing_guide() -> None:
     print(format_auto_typing_guide_text())
     print("")
+
+
+def _print_batch_validation_results(batch_report: dict) -> None:
+    print("")
+    print("Batch Validation Results")
+    print("------------------------")
+    print(f"folder={batch_report.get('folder', '')}")
+    print(
+        f"files_total={batch_report.get('files_total', 0)} "
+        f"files_validated={batch_report.get('files_validated', 0)} "
+        f"files_failed={batch_report.get('files_failed', 0)}"
+    )
+    totals = dict(batch_report.get("summary_total", {}))
+    print(
+        f"checks_total={totals.get('total', 0)} "
+        f"pass={totals.get('pass', 0)} "
+        f"warning={totals.get('warning', 0)} "
+        f"fail={totals.get('fail', 0)}"
+    )
+
+    for file_row in batch_report.get("results", []):
+        file_name = str(file_row.get("file", ""))
+        report = dict(file_row.get("report", {}))
+        print("")
+        print(f"File: {file_name}")
+        _print_validation_results(report)
+
+    fails = list(batch_report.get("failures", []))
+    if fails:
+        print("")
+        print("Batch file-level errors")
+        print("-----------------------")
+        for err in fails:
+            print(f"- {err}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -160,12 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
     val_auto_fix.add_argument("file", type=Path)
     val_auto_fix.add_argument("--write", action="store_true", default=False)
     val_auto_fix.add_argument("--out", default="", help="Output file path (used with --write)")
-    val_auto_fix.add_argument("--profile", default="default", choices=["default", "strict", "tolerant"])
     _feature_json_arg(val_auto_fix)
 
     val_run = val_sub.add_parser("run", help="Run structured validation checks on one SWC file")
     val_run.add_argument("file", type=Path)
-    val_run.add_argument("--profile", default="default", choices=["default", "strict", "tolerant"])
     _feature_json_arg(val_run)
 
     # ------------------------------ visualization
@@ -228,7 +257,8 @@ def main(argv: list[str] | None = None) -> int:
                 str(args.folder),
                 config_overrides=_parse_config_overrides(args.config_json),
             )
-            _print_json(out)
+            _print_validation_precheck({"precheck": out.get("precheck", [])})
+            _print_batch_validation_results(out)
             return 0
 
         if args.tool == "batch" and args.feature == "split":
@@ -277,7 +307,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.tool == "validation" and args.feature == "run":
             report = run_validation_checks_file(
                 str(args.file),
-                profile=str(args.profile),
                 config_overrides=_parse_config_overrides(args.config_json),
             ).to_dict()
             _print_validation_precheck(report)
@@ -289,10 +318,7 @@ def main(argv: list[str] | None = None) -> int:
                 str(args.file),
                 out_path=(args.out or None),
                 write_output=bool(args.write),
-                config_overrides={
-                    "profile": str(args.profile),
-                    **(_parse_config_overrides(args.config_json) or {}),
-                },
+                config_overrides=_parse_config_overrides(args.config_json),
             )
             report = out.get("report", {})
             if isinstance(report, dict):

@@ -23,6 +23,7 @@ from swctools.core.auto_typing import (
 )
 from swctools.core.config import feature_config_path
 from swctools.tools.batch_processing.features.auto_typing import run_folder as run_auto_typing
+from swctools.tools.batch_processing.features.batch_validation import validate_folder as run_batch_validation
 from swctools.tools.batch_processing.features.swc_splitter import split_folder
 
 _CFG_PATH = feature_config_path("batch_processing", "auto_typing")
@@ -101,6 +102,7 @@ class BatchTabWidget(QWidget):
     """Owns three batch control pages used directly by Control Center tabs."""
 
     log_message = Signal(str)
+    batch_validation_ready = Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -108,6 +110,7 @@ class BatchTabWidget(QWidget):
         self._config_dialog: _AutoTypingConfigDialog | None = None
         self._split_page = self._build_split_page()
         self._auto_page = self._build_auto_page()
+        self._validation_page = self._build_validation_page()
         self._radii_page = self._build_radii_page()
 
         # This root widget is not shown directly; pages are used in main window tabs.
@@ -124,6 +127,9 @@ class BatchTabWidget(QWidget):
 
     def radii_tab_widget(self) -> QWidget:
         return self._radii_page
+
+    def validation_tab_widget(self) -> QWidget:
+        return self._validation_page
 
     # --------------------------------------------------------- UI builders
     def _build_split_page(self) -> QWidget:
@@ -211,6 +217,31 @@ class BatchTabWidget(QWidget):
         self._radii_status = self._new_status_box()
         self._radii_status.setPlainText("Radii Cleaning tab is ready for future options.")
         layout.addWidget(self._radii_status, stretch=1)
+        return page
+
+    def _build_validation_page(self) -> QWidget:
+        page = QWidget()
+        root = QVBoxLayout(page)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+        root.setAlignment(Qt.AlignTop)
+
+        desc = QLabel(
+            "Run the same validation checks as Validation tool, but for all SWC files in a folder."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("font-size: 12px; color: #555;")
+        root.addWidget(desc)
+
+        self._btn_batch_validate = QPushButton("Run Validation on Folder…")
+        self._btn_batch_validate.clicked.connect(self._on_run_batch_validation)
+        root.addWidget(self._btn_batch_validate)
+
+        self._batch_validation_status = QLabel("No batch validation run yet.")
+        self._batch_validation_status.setWordWrap(True)
+        self._batch_validation_status.setStyleSheet("font-size: 12px; color: #555;")
+        root.addWidget(self._batch_validation_status)
+        root.addStretch(1)
         return page
 
     def _new_status_box(self) -> QPlainTextEdit:
@@ -352,3 +383,30 @@ class BatchTabWidget(QWidget):
             lines.extend(result.failures[:10])
 
         self._set_status("\n".join(lines))
+
+    def _on_run_batch_validation(self):
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "Select folder with SWC files for batch validation"
+        )
+        if not folder_path:
+            self._batch_validation_status.setText("Batch validation cancelled.")
+            self.log_message.emit("Batch validation cancelled.")
+            return
+        try:
+            out = run_batch_validation(folder_path)
+        except Exception as e:  # noqa: BLE001
+            msg = f"Batch validation failed: {e}"
+            self._batch_validation_status.setText(msg)
+            self.log_message.emit(msg)
+            return
+
+        totals = dict(out.get("summary_total", {}))
+        msg = (
+            f"Batch validation completed: files={out.get('files_validated', 0)}/"
+            f"{out.get('files_total', 0)}, failed_files={out.get('files_failed', 0)}, "
+            f"checks_total={totals.get('total', 0)}, pass={totals.get('pass', 0)}, "
+            f"warn={totals.get('warning', 0)}, fail={totals.get('fail', 0)}"
+        )
+        self._batch_validation_status.setText(msg)
+        self.log_message.emit(msg)
+        self.batch_validation_ready.emit(out)

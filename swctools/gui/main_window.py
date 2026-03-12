@@ -95,6 +95,7 @@ class SWCMainWindow(QMainWindow):
 
         self._control_tabs = QTabWidget()
         self._batch_tab = BatchTabWidget()
+        self._batch_tab.batch_validation_ready.connect(self._on_batch_validation_ready)
         self._validation_tab = ValidationTabWidget(as_panel=False)
         self._validation_precheck = ValidationPrecheckWidget()
         self._auto_typing_guide = AutoTypingGuideWidget()
@@ -481,6 +482,7 @@ class SWCMainWindow(QMainWindow):
 
         if key == "batch":
             self._control_tabs.addTab(self._batch_tab.split_tab_widget(), "Split")
+            self._control_tabs.addTab(self._batch_tab.validation_tab_widget(), "Validation")
             self._control_tabs.addTab(self._batch_tab.auto_tab_widget(), "Auto Label")
             self._control_tabs.addTab(self._batch_tab.radii_tab_widget(), "Radii Cleaning")
             self._control_tabs.setCurrentIndex(0)
@@ -513,11 +515,10 @@ class SWCMainWindow(QMainWindow):
         key = (name or "").strip().lower()
         if key == "batch":
             self._active_tool = "batch"
-            self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+            self._editor_tab.set_mode(EditorTab.MODE_BATCH)
             self._set_control_tabs_for_feature("batch")
             self._control_dock.show()
-            self._precheck_dock.hide()
-            self._auto_guide_dock.hide()
+            self._on_control_tab_changed(self._control_tabs.currentIndex())
             self._feature_label.setText("Active feature: Batch Processing")
             self._append_log("Feature switched: Batch Processing", "INFO")
             return
@@ -751,7 +752,7 @@ class SWCMainWindow(QMainWindow):
     def _reset_layout(self):
         self._data_dock.show()
         self._control_dock.show()
-        if self._active_tool == "validation":
+        if self._active_tool == "validation" or self._is_batch_validation_control_active():
             self._show_precheck_floating()
         else:
             self._precheck_dock.hide()
@@ -831,11 +832,38 @@ class SWCMainWindow(QMainWindow):
         label = self._control_tabs.tabText(idx).strip().lower()
         return label == "auto label"
 
+    def _is_batch_validation_control_active(self) -> bool:
+        if self._active_tool != "batch":
+            return False
+        idx = self._control_tabs.currentIndex()
+        if idx < 0:
+            return False
+        label = self._control_tabs.tabText(idx).strip().lower()
+        return label == "validation"
+
     def _on_control_tab_changed(self, _index: int):
         if self._is_auto_label_control_active():
             self._show_auto_typing_guide_floating()
         else:
             self._auto_guide_dock.hide()
+        if self._active_tool == "validation" or self._is_batch_validation_control_active():
+            self._show_precheck_floating()
+        else:
+            self._precheck_dock.hide()
+
+    def _on_batch_validation_ready(self, report: dict):
+        self._editor_tab.show_batch_validation_results(report)
+        if self._active_tool == "batch":
+            self._editor_tab.set_mode(EditorTab.MODE_BATCH)
+            self._feature_label.setText("Active feature: Batch Processing")
+        totals = dict(report.get("summary_total", {}))
+        self._append_log(
+            "Batch validation results loaded to canvas: "
+            f"files={report.get('files_validated', 0)}/{report.get('files_total', 0)}, "
+            f"pass={totals.get('pass', 0)}, warn={totals.get('warning', 0)}, "
+            f"fail={totals.get('fail', 0)}",
+            "INFO",
+        )
 
     def _undo_edit(self):
         if hasattr(self._editor_tab, "_dendro"):
@@ -858,8 +886,8 @@ class SWCMainWindow(QMainWindow):
             "4) Validation uses a floating Pre-check Summary window above the canvas.\n"
             "5) Auto Label uses a floating Auto Typing Guide window with decision boundaries.\n"
             "6) After selection, Control Center tabs switch to that feature only.\n"
-            "   Batch Processing includes: Split, Auto Labeling, Radii Cleaning.\n"
-            "7) Canvas keeps the 3D view by default once a file is loaded.\n"
+            "   Batch Processing includes: Split, Validation, Auto Labeling, Radii Cleaning.\n"
+            "7) Canvas keeps 3D for standard visualization/editing; Batch Processing uses table views.\n"
             "8) Bottom panel shows all logs and warnings."
         )
         self._append_log(text, "HELP")

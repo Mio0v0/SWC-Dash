@@ -15,8 +15,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QBrush, QFont
+from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QColor, QBrush, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTreeWidget,
@@ -32,9 +33,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from swctools.core.config import feature_config_path
 from swctools.core.validation import _split_swc_by_soma_roots
 from swctools.core.validation_catalog import CHECK_CATALOG, CHECK_ORDER
 from swctools.tools.validation.features.core import run_checks_text
+
+_VALIDATION_CFG_PATH = feature_config_path("validation", "default")
 
 
 class _ValidationWorker(QObject):
@@ -49,7 +53,7 @@ class _ValidationWorker(QObject):
     @Slot()
     def run(self):
         try:
-            report = run_checks_text(self._swc_text, profile="default")
+            report = run_checks_text(self._swc_text)
             self.finished.emit(self._run_id, report.to_dict())
         except Exception as e:  # noqa: BLE001
             self.failed.emit(self._run_id, str(e))
@@ -126,6 +130,14 @@ class ValidationTabWidget(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
+        self._tabs = QTabWidget()
+        layout.addWidget(self._tabs, stretch=1)
+
+        results_page = QWidget()
+        results_root = QVBoxLayout(results_page)
+        results_root.setContentsMargins(0, 0, 0, 0)
+        results_root.setSpacing(8)
+
         header = QHBoxLayout()
         title = QLabel("Validation Results")
         title.setStyleSheet("font-size: 14px; font-weight: 600; color: #333;")
@@ -134,7 +146,7 @@ class ValidationTabWidget(QWidget):
         self._btn_run = QPushButton("Run Validation")
         self._btn_run.clicked.connect(self.run_validation)
         header.addWidget(self._btn_run)
-        layout.addLayout(header)
+        results_root.addLayout(header)
 
         self._alert_banner = QLabel("")
         self._alert_banner.setVisible(False)
@@ -145,10 +157,10 @@ class ValidationTabWidget(QWidget):
             "  background-color: #fdecea; color: #7b1a12; font-size: 12px;"
             "}"
         )
-        layout.addWidget(self._alert_banner)
+        results_root.addWidget(self._alert_banner)
 
         split = QSplitter(Qt.Vertical)
-        layout.addWidget(split, stretch=1)
+        results_root.addWidget(split, stretch=1)
 
         results_panel = QWidget()
         results_layout = QVBoxLayout(results_panel)
@@ -203,9 +215,63 @@ class ValidationTabWidget(QWidget):
         self._save_status = QLabel("")
         self._save_status.setStyleSheet("color: #555; font-size: 12px;")
         btn_layout.addWidget(self._save_status)
-        layout.addLayout(btn_layout)
+        results_root.addLayout(btn_layout)
+
+        self._tabs.addTab(results_page, "Results")
+        self._tabs.addTab(self._build_config_page(), "Config JSON")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         self._clear_results_ui("Load an SWC and click Run Validation.")
+        self._load_validation_config_json()
+
+    def _build_config_page(self) -> QWidget:
+        page = QWidget()
+        root = QVBoxLayout(page)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+        root.setAlignment(Qt.AlignTop)
+
+        desc = QLabel(
+            "Validation uses one config file: default.json.\n"
+            "Edit and save this JSON to change enabled checks, severities, and parameters."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("font-size: 12px; color: #555;")
+        root.addWidget(desc)
+
+        path_label = QLabel(f"Config file: {_VALIDATION_CFG_PATH}")
+        path_label.setWordWrap(True)
+        path_label.setStyleSheet("font-size: 12px; color: #555;")
+        root.addWidget(path_label)
+
+        self._cfg_editor = QPlainTextEdit()
+        self._cfg_editor.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #fafafa; border: 1px solid #ddd; color: #333;"
+            "  font-family: Menlo, Consolas, monospace; font-size: 12px;"
+            "}"
+        )
+        root.addWidget(self._cfg_editor, stretch=1)
+
+        btn_row = QHBoxLayout()
+        self._btn_cfg_reload = QPushButton("Reload")
+        self._btn_cfg_reload.clicked.connect(self._load_validation_config_json)
+        btn_row.addWidget(self._btn_cfg_reload)
+
+        self._btn_cfg_save = QPushButton("Save")
+        self._btn_cfg_save.clicked.connect(self._save_validation_config_json)
+        btn_row.addWidget(self._btn_cfg_save)
+
+        self._btn_cfg_open = QPushButton("Open Externally")
+        self._btn_cfg_open.clicked.connect(self._open_validation_config_external)
+        btn_row.addWidget(self._btn_cfg_open)
+
+        btn_row.addStretch()
+        self._cfg_status = QLabel("")
+        self._cfg_status.setStyleSheet("color: #555; font-size: 12px;")
+        btn_row.addWidget(self._cfg_status)
+        root.addLayout(btn_row)
+        return page
 
     # --------------------------------------------------------- Public API
     def has_results(self) -> bool:
@@ -299,6 +365,46 @@ class ValidationTabWidget(QWidget):
         self._save_status.setText(f"Validation error: {error_text}")
         self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
+    def _on_tab_changed(self, index: int):
+        if self._tabs.tabText(index).lower() == "config json":
+            self._load_validation_config_json()
+
+    def _load_validation_config_json(self):
+        try:
+            txt = _VALIDATION_CFG_PATH.read_text(encoding="utf-8")
+            parsed = json.loads(txt)
+            self._cfg_editor.setPlainText(json.dumps(parsed, indent=2, sort_keys=True))
+            self._cfg_status.setText("Loaded.")
+            self._cfg_status.setStyleSheet("color: #555; font-size: 12px;")
+        except Exception as e:  # noqa: BLE001
+            self._cfg_status.setText(f"Load failed: {e}")
+            self._cfg_status.setStyleSheet("color: #d62728; font-size: 12px;")
+
+    def _save_validation_config_json(self):
+        try:
+            parsed = json.loads(self._cfg_editor.toPlainText() or "{}")
+            if not isinstance(parsed, dict):
+                raise ValueError("JSON root must be an object")
+            _VALIDATION_CFG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _VALIDATION_CFG_PATH.write_text(
+                json.dumps(parsed, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            self._cfg_status.setText("Saved.")
+            self._cfg_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
+        except Exception as e:  # noqa: BLE001
+            self._cfg_status.setText(f"Save failed: {e}")
+            self._cfg_status.setStyleSheet("color: #d62728; font-size: 12px;")
+
+    def _open_validation_config_external(self):
+        ok = QDesktopServices.openUrl(QUrl.fromLocalFile(str(_VALIDATION_CFG_PATH)))
+        if ok:
+            self._cfg_status.setText("Opened in external editor.")
+            self._cfg_status.setStyleSheet("color: #555; font-size: 12px;")
+        else:
+            self._cfg_status.setText("Could not open external editor.")
+            self._cfg_status.setStyleSheet("color: #d62728; font-size: 12px;")
+
     # --------------------------------------------------------- Internal helpers
     def _ensure_swc_text(self):
         if not self._swc_dirty and self._swc_text:
@@ -342,8 +448,6 @@ class ValidationTabWidget(QWidget):
             return "PASS", "#2ca02c"
         if s == "warning":
             return "WARN", "#ff9900"
-        if s == "error":
-            return "ERR", "#9467bd"
         return "FAIL", "#d62728"
 
     def _result_sort_key(self, row: dict) -> tuple[int, str]:

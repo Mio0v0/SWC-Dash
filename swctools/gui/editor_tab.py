@@ -5,11 +5,16 @@ import pandas as pd
 import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QBrush, QFont
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QSplitter,
     QStackedWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -17,6 +22,7 @@ from PySide6.QtWidgets import (
 from .constants import DEFAULT_COLORS, label_for_type
 from .dendrogram_widget import DendrogramWidget
 from .neuron_3d_widget import Neuron3DWidget
+from swctools.core.validation_catalog import CHECK_ORDER
 
 
 class _Projection2DWidget(QWidget):
@@ -123,6 +129,7 @@ class EditorTab(QWidget):
     df_changed = Signal(pd.DataFrame)
 
     MODE_CANVAS = "canvas"
+    MODE_BATCH = "batch"
     MODE_DENDRO = "dendrogram"
     MODE_VIS = "visualization"
 
@@ -140,6 +147,32 @@ class EditorTab(QWidget):
         self._page_empty = QWidget()
         self._page_empty.setStyleSheet("background: #000;")
         self._stack.addWidget(self._page_empty)
+
+        self._page_batch = QWidget()
+        batch_layout = QVBoxLayout(self._page_batch)
+        batch_layout.setContentsMargins(8, 8, 8, 8)
+        batch_layout.setSpacing(6)
+        batch_title = QLabel("Batch Validation Results")
+        batch_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #333;")
+        batch_layout.addWidget(batch_title)
+        self._batch_summary = QLabel("Run Batch Processing -> Validation to populate results.")
+        self._batch_summary.setWordWrap(True)
+        self._batch_summary.setStyleSheet("font-size: 12px; color: #555;")
+        batch_layout.addWidget(self._batch_summary)
+        self._batch_tree = QTreeWidget()
+        self._batch_tree.setHeaderLabels(["Status", "Label"])
+        self._batch_tree.setRootIsDecorated(True)
+        self._batch_tree.setItemsExpandable(True)
+        self._batch_tree.setAlternatingRowColors(True)
+        self._batch_tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._batch_tree.setStyleSheet(
+            "QTreeWidget { font-size: 12px; gridline-color: #ddd; }"
+            "QHeaderView::section { font-weight: 600; padding: 4px; }"
+        )
+        self._batch_tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._batch_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        batch_layout.addWidget(self._batch_tree, stretch=1)
+        self._stack.addWidget(self._page_batch)
 
         self._view3d_canvas = Neuron3DWidget()
         self._page_canvas = QWidget()
@@ -204,9 +237,93 @@ class EditorTab(QWidget):
         self._show_current_mode()
 
     def set_mode(self, mode: str):
-        if mode in (self.MODE_CANVAS, self.MODE_DENDRO, self.MODE_VIS):
+        if mode in (self.MODE_CANVAS, self.MODE_BATCH, self.MODE_DENDRO, self.MODE_VIS):
             self._mode = mode
             self._show_current_mode()
+
+    def show_batch_validation_results(self, batch_report: dict):
+        self._batch_tree.clear()
+        totals = dict(batch_report.get("summary_total", {}))
+        self._batch_summary.setText(
+            f"Folder: {batch_report.get('folder', '')}\n"
+            f"Files validated: {batch_report.get('files_validated', 0)}/{batch_report.get('files_total', 0)}  "
+            f"Failed files: {batch_report.get('files_failed', 0)}\n"
+            f"Checks: total={totals.get('total', 0)} pass={totals.get('pass', 0)} "
+            f"warn={totals.get('warning', 0)} fail={totals.get('fail', 0)}"
+        )
+
+        for fr in batch_report.get("results", []):
+            fname = str(fr.get("file", ""))
+            report = dict(fr.get("report", {}))
+            summary = dict(report.get("summary", {}))
+            pass_n = int(summary.get("pass", 0))
+            fail_n = int(summary.get("fail", 0))
+            warn_n = int(summary.get("warning", 0))
+            top_status = "pass"
+            if fail_n > 0:
+                top_status = "fail"
+            elif warn_n > 0:
+                top_status = "warning"
+            _status_txt, color = self._status_cell(top_status)
+            status_counts = f"PASS #{pass_n} / FAIL #{fail_n} / WARNING #{warn_n}"
+            top = QTreeWidgetItem([status_counts, fname])
+            top.setTextAlignment(0, Qt.AlignLeft | Qt.AlignVCenter)
+            top.setTextAlignment(1, Qt.AlignLeft | Qt.AlignVCenter)
+            top.setFont(0, QFont("", 11, QFont.Bold))
+            top.setForeground(0, QBrush(QColor(color)))
+            top.setToolTip(
+                1,
+                (
+                    f"pass={pass_n} "
+                    f"fail={fail_n} "
+                    f"warning={warn_n}"
+                ),
+            )
+            top.setExpanded(False)
+            self._batch_tree.addTopLevelItem(top)
+
+            rows = list(report.get("results", []))
+            rows.sort(key=self._result_sort_key)
+            for row in rows:
+                status = str(row.get("status", "")).lower()
+                tag, color = self._status_cell(status)
+                label = str(row.get("label", row.get("key", "")))
+                detail = str(row.get("message", "")).strip()
+                child = QTreeWidgetItem([tag, label])
+                child.setTextAlignment(0, Qt.AlignLeft | Qt.AlignVCenter)
+                child.setTextAlignment(1, Qt.AlignLeft | Qt.AlignVCenter)
+                child.setFont(0, QFont("", 11, QFont.Bold))
+                child.setForeground(0, QBrush(QColor(color)))
+                if detail:
+                    child.setToolTip(1, detail)
+                top.addChild(child)
+
+        if batch_report.get("failures"):
+            fail_top = QTreeWidgetItem(["FAIL", "File errors"])
+            fail_top.setFont(0, QFont("", 11, QFont.Bold))
+            fail_top.setForeground(0, QBrush(QColor("#d62728")))
+            fail_top.setExpanded(False)
+            self._batch_tree.addTopLevelItem(fail_top)
+            for err in batch_report.get("failures", []):
+                child = QTreeWidgetItem(["FAIL", str(err)])
+                child.setFont(0, QFont("", 11, QFont.Bold))
+                child.setForeground(0, QBrush(QColor("#d62728")))
+                fail_top.addChild(child)
+
+        self._batch_tree.expandToDepth(0)
+
+    def _status_cell(self, status: str) -> tuple[str, str]:
+        s = (status or "").lower()
+        if s == "pass":
+            return "PASS", "#2ca02c"
+        if s == "warning":
+            return "WARN", "#ff9900"
+        return "FAIL", "#d62728"
+
+    def _result_sort_key(self, row: dict) -> tuple[int, str]:
+        key = str(row.get("key", ""))
+        label = str(row.get("label", ""))
+        return (CHECK_ORDER.get(key, 1000), label.lower())
 
     def take_dendrogram_controls_panel(self) -> QWidget:
         return self._dendro.take_controls_panel()
@@ -249,6 +366,9 @@ class EditorTab(QWidget):
         self._proj_yz.highlight_node(swc_id)
 
     def _show_current_mode(self):
+        if self._mode == self.MODE_BATCH:
+            self._stack.setCurrentWidget(self._page_batch)
+            return
         if not self._has_data:
             self._stack.setCurrentWidget(self._page_empty)
             return

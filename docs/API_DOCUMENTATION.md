@@ -50,11 +50,11 @@ Runs radii cleaning on all SWC files in a folder.
 
 ### Validation
 
-#### `validation_run_text(swc_text, *, profile=None, config_overrides=None, feature_overrides=None) -> ValidationReport`
+#### `validation_run_text(swc_text, *, config_overrides=None, feature_overrides=None) -> ValidationReport`
 
 Runs structured validation on SWC text.
 
-#### `validation_run_file(path, *, profile=None, config_overrides=None, feature_overrides=None) -> ValidationReport`
+#### `validation_run_file(path, *, config_overrides=None, feature_overrides=None) -> ValidationReport`
 
 Runs structured validation on one SWC file.
 
@@ -132,10 +132,9 @@ from swctools.tools.validation import PreCheckItem, CheckResult, ValidationRepor
 
 `ValidationReport.to_dict()` includes:
 
-- `profile`
 - `precheck`
 - `results`
-- `summary` (`pass`, `warning`, `fail`, `error`, `total`)
+- `summary` (`pass`, `warning`, `fail`, `total`)
 
 ## Plugin Extension Pattern
 
@@ -162,11 +161,9 @@ Default configs are stored per feature:
 
 - `swctools/tools/<tool>/configs/<feature>.json`
 
-Validation profiles:
+Validation config:
 
 - `swctools/tools/validation/configs/default.json`
-- `swctools/tools/validation/configs/strict.json`
-- `swctools/tools/validation/configs/tolerant.json`
 
 Use runtime overrides with `config_overrides` (API) or `--config-json` (CLI).
 
@@ -176,7 +173,7 @@ Use runtime overrides with `config_overrides` (API) or `--config-json` (CLI).
 import swctools.api as swc
 
 # Validation
-report = swc.validation_run_file("data/example.swc", profile="default")
+report = swc.validation_run_file("data/example.swc")
 print(report.summary())
 
 # Batch auto-typing
@@ -184,4 +181,3 @@ opts = swc.RuleBatchOptions(soma=True, axon=True, basal=True)
 result = swc.batch_auto_typing("data/folder", options=opts)
 print(result.files_processed, result.total_type_changes)
 ```
-

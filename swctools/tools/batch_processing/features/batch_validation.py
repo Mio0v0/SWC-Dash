@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from swctools.core.config import load_feature_config, merge_config
-from swctools.core.validation import run_per_tree_validation
+from swctools.core.validation_engine import run_validation_text
 from swctools.plugins.registry import register_builtin_method, resolve_method
 
 TOOL = "batch_processing"
@@ -16,13 +16,15 @@ FEATURE_KEY = f"{TOOL}.{FEATURE}"
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "method": "default",
+    "config_overrides": {},
     "include": {"extensions": [".swc"]},
 }
 
 
 def _builtin_validate_text(swc_text: str, config: dict[str, Any]):
-    _ = config
-    return run_per_tree_validation(swc_text)
+    cfg_overrides = config.get("config_overrides")
+    report = run_validation_text(swc_text, config_overrides=cfg_overrides)
+    return report.to_dict()
 
 
 register_builtin_method(FEATURE_KEY, "default", _builtin_validate_text)
@@ -50,26 +52,34 @@ def validate_folder(folder: str, *, config_overrides: dict | None = None) -> dic
     exts = {e.lower() for e in cfg.get("include", {}).get("extensions", [".swc"])}
     swc_files = sorted(p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() in exts)
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     failures = []
+    precheck: list[dict[str, Any]] = []
+    agg = {"total": 0, "pass": 0, "warning": 0, "fail": 0}
+
     for fp in swc_files:
         try:
             text = fp.read_text(encoding="utf-8", errors="ignore")
-            check_names, tree_results = validate_swc_text(text, config_overrides=cfg)
-            rows.append({
-                "file": fp.name,
-                "checks": check_names,
-                "tree_results": tree_results,
-                "tree_count": len(tree_results),
-            })
+            report = validate_swc_text(text, config_overrides=cfg)
+            if not precheck:
+                precheck = list(report.get("precheck", []))
+            summary = dict(report.get("summary", {}))
+            agg["total"] += int(summary.get("total", 0))
+            agg["pass"] += int(summary.get("pass", 0))
+            agg["warning"] += int(summary.get("warning", 0))
+            agg["fail"] += int(summary.get("fail", 0))
+            rows.append({"file": fp.name, "report": report})
         except Exception as e:  # noqa: BLE001
             failures.append(f"{fp.name}: {e}")
 
     return {
         "folder": str(in_dir),
+        "profile": "default",
         "files_total": len(swc_files),
         "files_validated": len(rows),
         "files_failed": len(failures),
+        "precheck": precheck,
+        "summary_total": agg,
         "results": rows,
         "failures": failures,
     }

@@ -1,6 +1,5 @@
 {
   "feature": "run_checks",
   "enabled": true,
-  "method": "default",
-  "profile": "default"
+  "method": "default"
 }
