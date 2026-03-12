@@ -8,7 +8,7 @@ If you just cloned this repo and want to run it locally:
 
 ```bash
 git clone <your-repo-url>
-cd SWC-Dash
+cd SWC-STUDIO
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip

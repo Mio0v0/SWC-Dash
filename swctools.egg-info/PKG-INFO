@@ -19,6 +19,55 @@ Requires-Dist: vispy>=0.14; extra == "gui"
 
 `swctools` is a modular Python package for SWC morphology workflows with a shared backend used by both CLI and GUI interfaces.
 
+## First-Time Setup
+
+If you just cloned this repo and want to run it locally:
+
+```bash
+git clone <your-repo-url>
+cd SWC-Dash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[gui]"
+```
+
+CLI-only install (no GUI dependencies):
+
+```bash
+pip install -e .
+```
+
+Verify install:
+
+```bash
+swctools --help
+swctools-gui
+```
+
+If `swctools` or `swctools-gui` is not found, make sure the virtual environment is active:
+
+```bash
+source .venv/bin/activate
+```
+
+## Quick Start
+
+Run CLI examples:
+
+```bash
+swctools batch split ./data
+swctools batch validate ./data
+swctools batch auto-typing ./data --soma --axon --basal
+swctools validation run ./data/single-soma.swc
+```
+
+Run GUI:
+
+```bash
+swctools-gui
+```
+
 ## Architecture
 
 - `swctools/core`: shared algorithms, SWC I/O, and models.
@@ -26,6 +75,11 @@ Requires-Dist: vispy>=0.14; extra == "gui"
 - `swctools/plugins`: method registry for feature-level overrides.
 - `swctools/cli`: terminal interface that calls tool/feature APIs.
 - `swctools/gui`: Qt desktop interface that calls shared backend logic.
+
+## Documentation
+
+- [CLI Reference](docs/CLI_REFERENCE.md)
+- [API / Library Documentation](docs/API_DOCUMENTATION.md)
 
 ## Tool -> Feature map
 
@@ -37,13 +91,13 @@ Requires-Dist: vispy>=0.14; extra == "gui"
 - Validation
   - `auto_fix`
 - Visualization
-  - `mesh_editing`
+  - `mesh_editing` (placeholder)
 - Morphology Editing
   - `dendrogram_editing`
 - Atlas Registration
   - `registration` (placeholder)
 - Analysis
-  - `summary` (starter implementation)
+  - `summary` (placeholder)
 
 Each feature stores defaults in `swctools/tools/<tool>/configs/<feature>.json`.
 
@@ -51,8 +105,18 @@ Each feature stores defaults in `swctools/tools/<tool>/configs/<feature>.json`.
 
 ```bash
 swctools batch split /path/to/folder
+# swctools batch split /Users/tuo/Desktop/SWC-Data
+# swctools batch split ./data
+
+swctools batch validate /path/to/folder
+# swctools batch validate ./data
+# swctools batch validate ./data --config-json '{"checks":{"no_back_tracking":{"enabled":true}}}'
+
 swctools batch auto-typing /path/to/folder --soma --axon --basal
+# swctools batch auto-typing ./data --soma --axon --basal
 swctools validation auto-fix /path/to/file.swc --write
+swctools validation run /path/to/file.swc
+# swctools validation run ./data/single-soma.swc
 swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write
 swctools plugins list
 ```
