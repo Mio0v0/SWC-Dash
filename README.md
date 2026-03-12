@@ -40,6 +40,10 @@ Each feature stores defaults in `swctools/tools/<tool>/configs/<feature>.json`.
 ```bash
 swctools batch split /path/to/folder
 # swctools batch split /Users/tuo/Desktop/SWC_Test
+swctools batch validate /path/to/folder
+# swctools batch validate /Users/tuo/Desktop/SWC_Test
+# swctools batch validate /Users/tuo/Desktop/SWC_Test --config-json '{"checks":{"no_back_tracking":{"enabled":true}}}'
+
 swctools batch auto-typing /path/to/folder --soma --axon --basal
 # swctools batch auto-typing /Users/tuo/Desktop/SWC_Test --soma --axon --basal
 swctools validation auto-fix /path/to/file.swc --write

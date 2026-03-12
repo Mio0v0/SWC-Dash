@@ -169,8 +169,12 @@ class EditorTab(QWidget):
             "QTreeWidget { font-size: 12px; gridline-color: #ddd; }"
             "QHeaderView::section { font-weight: 600; padding: 4px; }"
         )
-        self._batch_tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self._batch_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        batch_header = self._batch_tree.header()
+        batch_header.setSectionResizeMode(0, QHeaderView.Interactive)
+        batch_header.setSectionResizeMode(1, QHeaderView.Interactive)
+        batch_header.setStretchLastSection(False)
+        self._batch_tree.setColumnWidth(0, 360)
+        self._batch_tree.setColumnWidth(1, 420)
         batch_layout.addWidget(self._batch_tree, stretch=1)
         self._stack.addWidget(self._page_batch)
 
@@ -259,18 +263,10 @@ class EditorTab(QWidget):
             pass_n = int(summary.get("pass", 0))
             fail_n = int(summary.get("fail", 0))
             warn_n = int(summary.get("warning", 0))
-            top_status = "pass"
-            if fail_n > 0:
-                top_status = "fail"
-            elif warn_n > 0:
-                top_status = "warning"
-            _status_txt, color = self._status_cell(top_status)
-            status_counts = f"PASS #{pass_n} / FAIL #{fail_n} / WARNING #{warn_n}"
-            top = QTreeWidgetItem([status_counts, fname])
+            top = QTreeWidgetItem(["", fname])
             top.setTextAlignment(0, Qt.AlignLeft | Qt.AlignVCenter)
             top.setTextAlignment(1, Qt.AlignLeft | Qt.AlignVCenter)
-            top.setFont(0, QFont("", 11, QFont.Bold))
-            top.setForeground(0, QBrush(QColor(color)))
+            top.setForeground(1, QBrush(QColor("#000000")))
             top.setToolTip(
                 1,
                 (
@@ -281,6 +277,11 @@ class EditorTab(QWidget):
             )
             top.setExpanded(False)
             self._batch_tree.addTopLevelItem(top)
+            self._batch_tree.setItemWidget(
+                top,
+                0,
+                self._make_batch_status_counts_widget(pass_n, fail_n, warn_n),
+            )
 
             rows = list(report.get("results", []))
             rows.sort(key=self._result_sort_key)
@@ -319,6 +320,22 @@ class EditorTab(QWidget):
         if s == "warning":
             return "WARN", "#ff9900"
         return "FAIL", "#d62728"
+
+    def _make_batch_status_counts_widget(self, pass_n: int, fail_n: int, warn_n: int) -> QLabel:
+        w = QLabel()
+        w.setTextFormat(Qt.RichText)
+        w.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        w.setStyleSheet(
+            "QLabel { background: transparent; font-size: 11pt; font-weight: 700; }"
+        )
+        w.setText(
+            (
+                f"<span style='color:#2ca02c'>PASS #{int(pass_n)}</span>"
+                f" / <span style='color:#d62728'>FAIL #{int(fail_n)}</span>"
+                f" / <span style='color:#ffcc00'>WARNING #{int(warn_n)}</span>"
+            )
+        )
+        return w
 
     def _result_sort_key(self, row: dict) -> tuple[int, str]:
         key = str(row.get("key", ""))
