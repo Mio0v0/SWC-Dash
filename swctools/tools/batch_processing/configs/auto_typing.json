@@ -1,66 +1,66 @@
 {
-  "feature": "auto_typing",
   "enabled": true,
+  "feature": "auto_typing",
   "method": "default",
   "options": {
-    "soma": true,
-    "axon": true,
     "apic": false,
+    "axon": true,
     "basal": true,
     "rad": false,
+    "soma": true,
     "zip_output": false
   },
   "rules": {
+    "assign_missing": {
+      "min_gain": -0.06,
+      "min_score": 0.58
+    },
+    "branch_score_weights": {
+      "apical": {
+        "branch": 0.15,
+        "path": 0.22,
+        "prior": 0.15,
+        "radius": 0.18,
+        "z": 0.3
+      },
+      "axon": {
+        "branch": 0.14,
+        "path": 0.32,
+        "prior": 0.1,
+        "radial": 0.24,
+        "radius": 0.2
+      },
+      "basal": {
+        "branch": 0.22,
+        "path": 0.15,
+        "prior": 0.15,
+        "radius": 0.18,
+        "z": 0.3
+      }
+    },
     "class_labels": {
       "1": "soma",
       "2": "axon",
       "3": "basal",
       "4": "apical"
     },
-    "branch_score_weights": {
-      "axon": {
-        "path": 0.32,
-        "radial": 0.24,
-        "radius": 0.2,
-        "branch": 0.14,
-        "prior": 0.1
-      },
-      "apical": {
-        "z": 0.3,
-        "path": 0.22,
-        "radius": 0.18,
-        "branch": 0.15,
-        "prior": 0.15
-      },
-      "basal": {
-        "z": 0.3,
-        "branch": 0.22,
-        "radius": 0.18,
-        "path": 0.15,
-        "prior": 0.15
-      }
-    },
-    "ml_blend": 0.28,
     "ml_base_weight": 0.72,
-    "seed_prior_threshold": 0.55,
-    "assign_missing": {
-      "min_score": 0.58,
-      "min_gain": -0.06
-    },
-    "smoothing": {
-      "maj_fraction": 0.67,
-      "flip_margin": 0.1
-    },
+    "ml_blend": 0.28,
+    "notes": "This JSON controls the auto-labeling behavior (weights, thresholds, and options). Edit carefully; changes take effect when you save the file and re-run the batch or use the UI Save button.",
     "propagation_weights": {
-      "self": 0.35,
-      "parent": 0.35,
-      "children": 0.2,
       "branch_prior": 0.3,
-      "iterations": 4
+      "children": 0.2,
+      "iterations": 4,
+      "parent": 0.35,
+      "self": 0.35
     },
     "radius": {
       "copy_parent_if_zero": true
     },
-    "notes": "This JSON controls the auto-labeling behavior (weights, thresholds, and options). Edit carefully; changes take effect when you save the file and re-run the batch or use the UI Save button."
+    "seed_prior_threshold": 0.55,
+    "smoothing": {
+      "flip_margin": 0.1,
+      "maj_fraction": 0.67
+    }
   }
 }
