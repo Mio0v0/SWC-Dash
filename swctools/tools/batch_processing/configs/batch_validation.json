@@ -1,0 +1,10 @@
+{
+  "feature": "batch_validation",
+  "enabled": true,
+  "method": "default",
+  "include": {
+    "extensions": [
+      ".swc"
+    ]
+  }
+}

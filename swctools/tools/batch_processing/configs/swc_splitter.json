@@ -1,0 +1,9 @@
+{
+  "feature": "swc_splitter",
+  "enabled": true,
+  "method": "default",
+  "naming": {
+    "output_mode": "per_file_subdir",
+    "tree_pattern": "{stem}_tree{index}.swc"
+  }
+}

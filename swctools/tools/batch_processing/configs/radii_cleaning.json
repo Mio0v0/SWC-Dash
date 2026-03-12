@@ -1,0 +1,14 @@
+{
+  "feature": "radii_cleaning",
+  "enabled": true,
+  "method": "default",
+  "rules": {
+    "replace_non_positive": true,
+    "replace_nan": true,
+    "copy_parent_radius": true,
+    "min_radius": 0.1
+  },
+  "output": {
+    "suffix": "_radii_cleaned"
+  }
+}

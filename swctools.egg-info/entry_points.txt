@@ -1,0 +1,3 @@
+[console_scripts]
+swctools = swctools.cli.cli:main
+swctools-gui = swctools.gui.main:main

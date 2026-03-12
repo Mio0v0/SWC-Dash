@@ -1,0 +1,10 @@
+{
+  "feature": "summary",
+  "enabled": false,
+  "method": "default",
+  "metrics": {
+    "count_nodes_by_type": true,
+    "count_roots": true,
+    "count_branch_points": true
+  }
+}

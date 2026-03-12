@@ -28,7 +28,7 @@ from .constants import SWC_COLS
 from .editor_tab import EditorTab
 from .neuron_3d_widget import Neuron3DWidget
 from .swc_table_widget import SWCTableWidget
-from .validation_tab import ValidationTabWidget
+from .validation_tab import ValidationPrecheckWidget, ValidationTabWidget
 
 
 class SWCMainWindow(QMainWindow):
@@ -95,6 +95,7 @@ class SWCMainWindow(QMainWindow):
         self._control_tabs = QTabWidget()
         self._batch_tab = BatchTabWidget()
         self._validation_tab = ValidationTabWidget(as_panel=False)
+        self._validation_precheck = ValidationPrecheckWidget()
         self._viz_control = self._build_visualization_control_panel()
         self._set_control_tabs_for_feature("")
 
@@ -120,6 +121,20 @@ class SWCMainWindow(QMainWindow):
         self._control_dock.setWidget(self._control_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
         self.splitDockWidget(self._data_dock, self._control_dock, Qt.Vertical)
+
+        self._precheck_dock = QDockWidget("Pre-check Summary", self)
+        self._precheck_dock.setObjectName("ValidationPrecheckDock")
+        self._precheck_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self._precheck_dock.setAllowedAreas(
+            Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea | Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea
+        )
+        self._precheck_dock.setWidget(self._validation_precheck)
+        self.addDockWidget(Qt.TopDockWidgetArea, self._precheck_dock)
+        self._precheck_dock.hide()
 
         # ---------------- Bottom log ----------------
         self._log_console = QPlainTextEdit()
@@ -225,7 +240,7 @@ class SWCMainWindow(QMainWindow):
         tools_layout.setContentsMargins(8, 6, 8, 6)
         tools_layout.setSpacing(8)
 
-        b_batch = QPushButton("Batch Process")
+        b_batch = QPushButton("Batch Processing")
         b_batch.clicked.connect(lambda: self._activate_feature("batch"))
         tools_layout.addWidget(b_batch)
 
@@ -237,9 +252,17 @@ class SWCMainWindow(QMainWindow):
         b_visual.clicked.connect(lambda: self._activate_feature("visualization"))
         tools_layout.addWidget(b_visual)
 
-        b_dendro = QPushButton("Dendrogram Editing")
-        b_dendro.clicked.connect(lambda: self._activate_feature("dendrogram"))
-        tools_layout.addWidget(b_dendro)
+        b_morph = QPushButton("Morphology Editing")
+        b_morph.clicked.connect(lambda: self._activate_feature("morphology_editing"))
+        tools_layout.addWidget(b_morph)
+
+        b_atlas = QPushButton("Atlas Registration")
+        b_atlas.clicked.connect(lambda: self._activate_feature("atlas_registration"))
+        tools_layout.addWidget(b_atlas)
+
+        b_analysis = QPushButton("Analysis")
+        b_analysis.clicked.connect(lambda: self._activate_feature("analysis"))
+        tools_layout.addWidget(b_analysis)
 
         tools_layout.addStretch()
         self._feature_label = QLabel("Active feature: None")
@@ -344,6 +367,12 @@ class SWCMainWindow(QMainWindow):
         )
         window_menu.addAction(show_control_action)
 
+        show_precheck_action = QAction("Show/Hide Pre-check Summary", self)
+        show_precheck_action.triggered.connect(
+            lambda: self._toggle_precheck_panel(not self._precheck_dock.isVisible())
+        )
+        window_menu.addAction(show_precheck_action)
+
         # Help
         help_menu = menu.addMenu("Help")
         quick_action = QAction("Quick Manual", self)
@@ -429,9 +458,12 @@ class SWCMainWindow(QMainWindow):
             self._control_tabs.setCurrentWidget(self._validation_tab)
             return
 
-        if key == "dendrogram":
+        if key in ("morphology_editing", "dendrogram"):
             self._control_tabs.addTab(self._dendro_controls, "Label Editing")
             self._control_tabs.setCurrentWidget(self._dendro_controls)
+            return
+
+        if key in ("atlas_registration", "analysis"):
             return
 
         # default: visualization
@@ -446,14 +478,16 @@ class SWCMainWindow(QMainWindow):
             self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
             self._set_control_tabs_for_feature("batch")
             self._control_dock.show()
-            self._feature_label.setText("Active feature: Batch Process")
-            self._append_log("Feature switched: Batch Process", "INFO")
+            self._precheck_dock.hide()
+            self._feature_label.setText("Active feature: Batch Processing")
+            self._append_log("Feature switched: Batch Processing", "INFO")
             return
         if key == "validation":
             self._active_tool = "validation"
             self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
             self._set_control_tabs_for_feature("validation")
             self._control_dock.show()
+            self._show_precheck_floating()
             self._feature_label.setText("Active feature: Validation")
             self._append_log("Feature switched: Validation", "INFO")
             return
@@ -462,20 +496,41 @@ class SWCMainWindow(QMainWindow):
             self._editor_tab.set_mode(EditorTab.MODE_VIS)
             self._set_control_tabs_for_feature("visualization")
             self._control_dock.show()
+            self._precheck_dock.hide()
             self._feature_label.setText("Active feature: Visualization")
             self._append_log("Feature switched: Visualization", "INFO")
             return
-        if key == "dendrogram":
-            self._active_tool = "dendrogram"
+        if key in ("morphology_editing", "dendrogram"):
+            self._active_tool = "morphology_editing"
             self._editor_tab.set_mode(EditorTab.MODE_DENDRO)
-            self._set_control_tabs_for_feature("dendrogram")
+            self._set_control_tabs_for_feature("morphology_editing")
             self._control_dock.show()
-            self._feature_label.setText("Active feature: Dendrogram Editing")
-            self._append_log("Feature switched: Dendrogram Editing", "INFO")
+            self._precheck_dock.hide()
+            self._feature_label.setText("Active feature: Morphology Editing")
+            self._append_log("Feature switched: Morphology Editing", "INFO")
+            return
+        if key == "atlas_registration":
+            self._active_tool = "atlas_registration"
+            self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+            self._set_control_tabs_for_feature("atlas_registration")
+            self._control_dock.show()
+            self._precheck_dock.hide()
+            self._feature_label.setText("Active feature: Atlas Registration")
+            self._append_log("Feature switched: Atlas Registration (placeholder)", "INFO")
+            return
+        if key == "analysis":
+            self._active_tool = "analysis"
+            self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
+            self._set_control_tabs_for_feature("analysis")
+            self._control_dock.show()
+            self._precheck_dock.hide()
+            self._feature_label.setText("Active feature: Analysis")
+            self._append_log("Feature switched: Analysis (placeholder)", "INFO")
             return
         self._active_tool = ""
         self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
         self._set_control_tabs_for_feature("")
+        self._precheck_dock.hide()
         self._feature_label.setText("Active feature: None")
         self._append_log("No active tool selected.", "INFO")
 
@@ -524,7 +579,7 @@ class SWCMainWindow(QMainWindow):
             self._update_info_label(df, n_roots, n_soma)
             self._update_recent_files(path)
 
-            self._validation_tab.load_swc(df, self._filename)
+            self._validation_tab.load_swc(df, self._filename, auto_run=True)
             self._editor_tab.load_swc(df, self._filename)
             if self._active_tool:
                 self._activate_feature(self._active_tool)
@@ -610,7 +665,8 @@ class SWCMainWindow(QMainWindow):
         n_roots = int((self._df["parent"] == -1).sum())
         n_soma = int((self._df["type"] == 1).sum())
         self._update_info_label(self._df, n_roots, n_soma)
-        self._validation_tab.load_swc(self._df, self._filename)
+        # Avoid running full validation on every edit; user can re-run from Validation panel.
+        self._validation_tab.load_swc(self._df, self._filename, auto_run=False)
         self._append_log("Dendrogram edits applied to current SWC.", "INFO")
 
     # --------------------------------------------------- Helpers
@@ -650,6 +706,10 @@ class SWCMainWindow(QMainWindow):
     def _reset_layout(self):
         self._data_dock.show()
         self._control_dock.show()
+        if self._active_tool == "validation":
+            self._show_precheck_floating()
+        else:
+            self._precheck_dock.hide()
         # Don't force exact dock sizes here; allow users to drag boundaries.
         try:
             # Enable animated/interactive docks so the sash is draggable.
@@ -665,8 +725,25 @@ class SWCMainWindow(QMainWindow):
     def _toggle_control_panel(self, checked: bool):
         self._control_dock.setVisible(bool(checked))
 
+    def _toggle_precheck_panel(self, checked: bool):
+        if checked:
+            self._show_precheck_floating()
+        else:
+            self._precheck_dock.hide()
+
     def _toggle_log_panel(self, checked: bool):
         self._log_console.setVisible(bool(checked))
+
+    def _show_precheck_floating(self):
+        self._precheck_dock.show()
+        self._precheck_dock.setFloating(True)
+        g = self.geometry()
+        w = max(760, int(g.width() * 0.62))
+        h = max(360, int(g.height() * 0.36))
+        x = g.x() + max(40, int((g.width() - w) * 0.5))
+        y = g.y() + 120
+        self._precheck_dock.setGeometry(x, y, w, h)
+        self._precheck_dock.raise_()
 
     def _undo_edit(self):
         if hasattr(self._editor_tab, "_dendro"):
@@ -683,11 +760,12 @@ class SWCMainWindow(QMainWindow):
         text = (
             "Quick Manual:\n"
             "1) Top tab 'Home': File/Edit/View/Window/Help dropdown menus.\n"
-            "2) Top tab 'Tools': Batch, Validation, Visualization, Dendrogram Editing buttons.\n"
+            "2) Top tab 'Tools': Batch Processing, Validation, Visualization, Morphology Editing, "
+            "Atlas Registration, Analysis buttons.\n"
             "3) Data Explorer and Control Center are dock windows (close, float, resize, move).\n"
-            "4) Control Center is empty until a tool is selected.\n"
+            "4) Validation uses a floating Pre-check Summary window above the canvas.\n"
             "5) After selection, Control Center tabs switch to that feature only.\n"
-            "   Batch Process includes: Select & Process, Auto Labeling, Radii Cleaning.\n"
+            "   Batch Processing includes: Split, Auto Labeling, Radii Cleaning.\n"
             "6) Canvas keeps the 3D view by default once a file is loaded.\n"
             "7) Bottom panel shows all logs and warnings."
         )

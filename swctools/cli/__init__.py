@@ -1,2 +1,3 @@
-# CLI package for swctools
+"""CLI package for swctools."""
+
 __all__ = ["cli"]

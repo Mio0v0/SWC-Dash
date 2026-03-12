@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swctools"
+version = "0.1.0"
+description = "Modular SWC processing toolkit with shared core for CLI and GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "SWC-Dash Contributors"}]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "morphio>=3.3",
+  "neurom>=4.0"
+]
+
+[project.optional-dependencies]
+gui = [
+  "PySide6>=6.6",
+  "pyqtgraph>=0.14",
+  "vispy>=0.14"
+]
+
+[project.scripts]
+swctools = "swctools.cli.cli:main"
+swctools-gui = "swctools.gui.main:main"
+
+[tool.setuptools.packages.find]
+include = ["swctools*"]

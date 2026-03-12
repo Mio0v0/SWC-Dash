@@ -1,7 +1,6 @@
 """SWC-QT — PySide6-based SWC neuron editor."""
 
 import sys
-import os
 
 from PySide6.QtWidgets import QApplication
 from .main_window import SWCMainWindow

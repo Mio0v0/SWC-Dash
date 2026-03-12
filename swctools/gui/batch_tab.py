@@ -1,7 +1,7 @@
 """Batch processing controls for split, auto-labeling, and radii cleaning."""
 
 import os
-from pathlib import Path
+import json
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -15,13 +15,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .rule_batch_processor import RuleBatchOptions, run_rule_batch
-from .validation_core import _split_swc_by_soma_roots
-import json
-from pathlib import Path
+from swctools.core.auto_typing import (
+    RuleBatchOptions,
+    get_auto_rules_config,
+    save_auto_rules_config,
+)
+from swctools.core.config import feature_config_path
+from swctools.tools.batch_processing.features.auto_typing import run_folder as run_auto_typing
+from swctools.tools.batch_processing.features.swc_splitter import split_folder
 
-# Config path (package-level)
-_CFG_PATH = Path(__file__).resolve().parents[1] / "config" / "auto_rules.json"
+_CFG_PATH = feature_config_path("batch_processing", "auto_typing")
 
 
 class BatchTabWidget(QWidget):
@@ -249,19 +252,12 @@ class BatchTabWidget(QWidget):
     # ---------------- Rules editor helpers ----------------
     def _load_rules_text(self):
         try:
-            if _CFG_PATH.exists():
-                txt = _CFG_PATH.read_text(encoding="utf-8")
-            else:
-                txt = "{}"
+            pretty = json.dumps(get_auto_rules_config(), indent=2, sort_keys=True)
+            self._rules_edit.setPlainText(pretty)
+            return
         except Exception as e:
             txt = f"// Error loading rules: {e}\n"
-        # Pretty-print JSON if possible
-        try:
-            j = json.loads(txt)
-            pretty = json.dumps(j, indent=2, sort_keys=True)
-            self._rules_edit.setPlainText(pretty)
-        except Exception:
-            self._rules_edit.setPlainText(txt)
+        self._rules_edit.setPlainText(txt)
 
     def _on_toggle_edit_rules(self):
         if self._rules_edit.isReadOnly():
@@ -284,10 +280,7 @@ class BatchTabWidget(QWidget):
             self._set_status(f"Failed to parse rules JSON: {e}")
             return
         try:
-            # atomic write
-            tmp = _CFG_PATH.with_suffix(".tmp.json")
-            tmp.write_text(json.dumps(j, indent=2, sort_keys=True), encoding="utf-8")
-            tmp.replace(_CFG_PATH)
+            save_auto_rules_config(j)
             self._set_status("Rules saved to config.")
             # disable editing
             self._rules_edit.setReadOnly(True)
@@ -313,55 +306,25 @@ class BatchTabWidget(QWidget):
         if not in_folder:
             self._set_status("Folder split cancelled.")
             return
-
-        swc_files = sorted(
-            p for p in Path(in_folder).iterdir()
-            if p.is_file() and p.suffix.lower() == ".swc"
-        )
-        if not swc_files:
-            self._set_status(f"No .swc files found in:\n{in_folder}")
+        try:
+            result = split_folder(in_folder)
+        except Exception as e:
+            self._set_status(f"Folder split failed:\n{e}")
             return
 
-        files_split = 0
-        files_skipped = 0
-        cells_saved = 0
-        failures = []
-
-        for swc_path in swc_files:
-            try:
-                with open(swc_path, "r", encoding="utf-8", errors="ignore") as f:
-                    swc_text = f.read()
-                trees = _split_swc_by_soma_roots(swc_text)
-
-                if len(trees) <= 1:
-                    files_skipped += 1
-                    continue
-
-                files_split += 1
-                stem = swc_path.stem
-                out_dir = Path(in_folder) / stem
-                out_dir.mkdir(parents=True, exist_ok=True)
-
-                for idx, (_root_id, sub_text, _node_count) in enumerate(trees, start=1):
-                    out_path = out_dir / f"{stem}_tree{idx}.swc"
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        f.write(sub_text)
-                    cells_saved += 1
-            except Exception as e:
-                failures.append(f"{swc_path.name}: {e}")
-
-        summary = (
-            f"Folder split completed.\n"
-            f"Folder: {in_folder}\n"
-            f"Processed: {len(swc_files)} SWC file(s)\n"
-            f"Split files: {files_split}\n"
-            f"Skipped (<=1 soma-root cell): {files_skipped}\n"
-            f"Saved split files: {cells_saved}\n"
-            f"Failures: {len(failures)}"
-        )
-        if failures:
-            summary += "\n\nFirst errors:\n" + "\n".join(failures[:5])
-        self._set_status(summary)
+        summary = [
+            "Folder split completed.",
+            f"Folder: {result['folder']}",
+            f"Processed: {result['files_total']} SWC file(s)",
+            f"Split files: {result['files_split']}",
+            f"Skipped (<=1 soma-root cell): {result['files_skipped']}",
+            f"Saved split files: {result['trees_saved']}",
+            f"Failures: {len(result['failures'])}",
+        ]
+        if result["failures"]:
+            summary.extend(["", "First errors:"])
+            summary.extend(result["failures"][:5])
+        self._set_status("\n".join(summary))
 
     def _on_run_batch_check(self):
         folder_path = QFileDialog.getExistingDirectory(
@@ -393,7 +356,7 @@ class BatchTabWidget(QWidget):
         )
 
         try:
-            result = run_rule_batch(folder_path, opts)
+            result = run_auto_typing(folder_path, options=opts)
         except Exception as e:
             self._set_status(f"Rule-based batch processing failed:\n{e}")
             return

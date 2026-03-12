@@ -1,0 +1,30 @@
+{
+  "profile": "tolerant",
+  "checks": {
+    "has_soma": {"enabled": true, "severity": "warning", "params": {}},
+    "has_axon": {"enabled": true, "severity": "warning", "params": {}},
+    "has_basal_dendrite": {"enabled": true, "severity": "warning", "params": {}},
+    "has_apical_dendrite": {"enabled": true, "severity": "warning", "params": {}},
+    "all_neurite_radii_nonzero": {"enabled": true, "severity": "warning", "params": {}},
+    "all_section_lengths_nonzero": {"enabled": true, "severity": "warning", "params": {}},
+    "all_segment_lengths_nonzero": {"enabled": true, "severity": "warning", "params": {}},
+    "has_multifurcation": {"enabled": false, "severity": "warning", "params": {}},
+    "no_back_tracking": {"enabled": false, "severity": "warning", "params": {}},
+    "no_dangling_branches": {"enabled": true, "severity": "warning", "params": {}},
+    "no_fat_terminal_ends": {"enabled": false, "severity": "warning", "params": {}},
+    "no_flat_neurites": {"enabled": false, "severity": "warning", "params": {}},
+    "no_section_index_jumps": {"enabled": true, "severity": "warning", "params": {}},
+    "no_ultranarrow_sections": {"enabled": false, "severity": "warning", "params": {}},
+    "no_ultranarrow_starts": {"enabled": false, "severity": "warning", "params": {}},
+    "no_duplicate_3d_points": {"enabled": true, "severity": "warning", "params": {}},
+    "no_root_index_jumps": {"enabled": true, "severity": "warning", "params": {}},
+    "no_single_child_chains": {"enabled": false, "severity": "warning", "params": {}},
+    "soma_radius_nonzero": {"enabled": true, "severity": "warning", "params": {}},
+    "has_unifurcation": {"enabled": false, "severity": "warning", "params": {}},
+    "radius_upper_bound": {
+      "enabled": false,
+      "severity": "warning",
+      "params": {"max_radius": 30.0}
+    }
+  }
+}

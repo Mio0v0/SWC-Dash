@@ -1,0 +1,9 @@
+{
+  "feature": "registration",
+  "enabled": false,
+  "method": "default",
+  "atlas": {
+    "name": "",
+    "space": ""
+  }
+}

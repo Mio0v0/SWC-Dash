@@ -1,0 +1,9 @@
+{
+  "feature": "dendrogram_editing",
+  "enabled": true,
+  "method": "default",
+  "rules": {
+    "include_selected_node": true,
+    "preserve_soma_type": true
+  }
+}

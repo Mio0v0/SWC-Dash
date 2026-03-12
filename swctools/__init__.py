@@ -1,9 +1,11 @@
-"""swctools package — entry point for SWC core, CLI and GUI layers.
+"""swctools package entrypoint.
 
-This package groups the project into three layers:
-- swctools.core: core library functions
-- swctools.cli: CLI entrypoints
-- swctools.gui: the Qt-based GUI application (moved from SWC-QT)
+Layers:
+- swctools.core: shared algorithm/data logic
+- swctools.tools: tool + feature modules
+- swctools.api: public Python API
+- swctools.cli: terminal interface
+- swctools.gui: desktop GUI interface
 """
 
-__all__ = ["core", "cli", "gui"]
+__all__ = ["api", "core", "tools", "validation", "plugins", "cli", "gui"]
