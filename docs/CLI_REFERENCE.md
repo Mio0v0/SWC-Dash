@@ -58,6 +58,11 @@ Splits each SWC into trees by soma roots. Output naming is controlled by `swctoo
 
 Rule-based auto-typing over a folder.
 
+Before processing, CLI prints an `Auto Typing Rule Guide` section that explains:
+
+- how the auto-typing pipeline works
+- the active decision boundaries/thresholds
+
 Flags:
 
 - `--soma`

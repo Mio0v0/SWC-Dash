@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from swctools.core.auto_typing import RuleBatchOptions
+from swctools.core.auto_typing_catalog import format_auto_typing_guide_text
 from swctools.plugins.registry import list_all_feature_methods, list_feature_methods
 from swctools.tools.analysis.features.summary import analyze_file
 from swctools.tools.atlas_registration.features.registration import register_to_atlas
@@ -114,6 +115,11 @@ def _print_validation_results(report: dict) -> None:
             print(f"  failing_node_ids: {row.get('failing_node_ids', [])}")
             print(f"  failing_section_ids: {row.get('failing_section_ids', [])}")
             print(f"  metrics: {row.get('metrics', {})}")
+
+
+def _print_auto_typing_guide() -> None:
+    print(format_auto_typing_guide_text())
+    print("")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -234,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.tool == "batch" and args.feature == "auto-typing":
+            _print_auto_typing_guide()
             has_explicit_flags = any(
                 bool(v)
                 for v in (args.soma, args.axon, args.apic, args.basal, args.rad, args.zip)

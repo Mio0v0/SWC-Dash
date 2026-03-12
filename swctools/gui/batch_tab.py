@@ -1,7 +1,6 @@
 """Batch processing controls for split, auto-labeling, and radii cleaning."""
 
 import os
-import json
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -17,14 +16,9 @@ from PySide6.QtWidgets import (
 
 from swctools.core.auto_typing import (
     RuleBatchOptions,
-    get_auto_rules_config,
-    save_auto_rules_config,
 )
-from swctools.core.config import feature_config_path
 from swctools.tools.batch_processing.features.auto_typing import run_folder as run_auto_typing
 from swctools.tools.batch_processing.features.swc_splitter import split_folder
-
-_CFG_PATH = feature_config_path("batch_processing", "auto_typing")
 
 
 class BatchTabWidget(QWidget):
@@ -78,22 +72,15 @@ class BatchTabWidget(QWidget):
         return page
 
     def _build_auto_page(self) -> QWidget:
-        # Build a two-column layout: controls on the left, a rules/decision panel on the right
         page = QWidget()
-        root = QHBoxLayout(page)
+        root = QVBoxLayout(page)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
-
-        # Left column: controls
-        left = QWidget()
-        layout = QVBoxLayout(left)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
 
         desc = QLabel("Auto labeling with morphology rules for all SWC files in a selected folder.")
         desc.setWordWrap(True)
         desc.setStyleSheet("font-size: 12px; color: #555;")
-        layout.addWidget(desc)
+        root.addWidget(desc)
 
         flags_row1 = QHBoxLayout()
         flags_row2 = QHBoxLayout()
@@ -115,77 +102,15 @@ class BatchTabWidget(QWidget):
         for cb in (self._flag_basal, self._flag_rad, self._flag_zip):
             flags_row2.addWidget(cb)
         flags_row2.addStretch()
-        layout.addLayout(flags_row1)
-        layout.addLayout(flags_row2)
+        root.addLayout(flags_row1)
+        root.addLayout(flags_row2)
 
         self._btn_run_batch_check = QPushButton("Run Auto Labeling on Folder…")
         self._btn_run_batch_check.clicked.connect(self._on_run_batch_check)
-        layout.addWidget(self._btn_run_batch_check)
+        root.addWidget(self._btn_run_batch_check)
 
         self._auto_status = self._new_status_box()
-        layout.addWidget(self._auto_status, stretch=1)
-
-        # Right column: Rules / decision panel (collapsible)
-        right = QWidget()
-        r_layout = QVBoxLayout(right)
-        r_layout.setContentsMargins(0, 0, 0, 0)
-        r_layout.setSpacing(6)
-
-        title = QLabel("Decision engine — auto-label rules")
-        title.setStyleSheet("font-weight: 700; font-size: 13px;")
-        r_layout.addWidget(title)
-
-        hint = QLabel(
-            "This panel shows the JSON configuration that controls the auto-labeling algorithm.\n"
-            "You can edit thresholds and weights and save to change behavior.\n\n"
-            "Decision summary:\n"
-            "1) Partition branches anchored at soma/roots.\n"
-            "2) Compute branch features (path length, radial extent, mean radius, branchiness, z-mean).\n"
-            "3) Score each branch for axon/apical/basal using weighted features + prior from existing labels.\n"
-            "4) Optionally refine scores via a nearest-centroid (ML) step seeded by confident branches.\n"
-            "5) Assign branch-level classes, smooth locally among siblings, then propagate labels to nodes using neighborhood votes.\n"
-            "6) Radius rule: copy parent radius into zero/invalid radii when enabled.\n"
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("font-size: 12px; color: #444;")
-        r_layout.addWidget(hint)
-
-        self._rules_edit = QPlainTextEdit()
-        self._rules_edit.setReadOnly(True)
-        self._rules_edit.setMinimumWidth(420)
-        self._rules_edit.setMaximumWidth(800)
-        r_layout.addWidget(self._rules_edit, stretch=1)
-
-        btn_row = QHBoxLayout()
-        self._btn_edit_rules = QPushButton("Edit")
-        self._btn_edit_rules.clicked.connect(self._on_toggle_edit_rules)
-        btn_row.addWidget(self._btn_edit_rules)
-
-        self._btn_save_rules = QPushButton("Save")
-        self._btn_save_rules.clicked.connect(self._on_save_rules)
-        self._btn_save_rules.setEnabled(False)
-        btn_row.addWidget(self._btn_save_rules)
-
-        self._btn_reload_rules = QPushButton("Reload")
-        self._btn_reload_rules.clicked.connect(self._load_rules_text)
-        btn_row.addWidget(self._btn_reload_rules)
-
-        self._btn_open_editor = QPushButton("Open in Editor")
-        self._btn_open_editor.clicked.connect(self._on_open_in_editor)
-        btn_row.addWidget(self._btn_open_editor)
-
-        self._btn_toggle_rules = QPushButton("Hide")
-        self._btn_toggle_rules.clicked.connect(lambda: right.setVisible(not right.isVisible()))
-        btn_row.addWidget(self._btn_toggle_rules)
-
-        r_layout.addLayout(btn_row)
-
-        # Load initial rules text
-        self._load_rules_text()
-
-        # Assemble columns
-        root.addWidget(left, stretch=1)
-        root.addWidget(right, stretch=0)
+        root.addWidget(self._auto_status, stretch=1)
         return page
 
     def _build_radii_page(self) -> QWidget:
@@ -248,58 +173,6 @@ class BatchTabWidget(QWidget):
             if cb.isChecked():
                 flags.append(cb.text())
         return flags
-
-    # ---------------- Rules editor helpers ----------------
-    def _load_rules_text(self):
-        try:
-            pretty = json.dumps(get_auto_rules_config(), indent=2, sort_keys=True)
-            self._rules_edit.setPlainText(pretty)
-            return
-        except Exception as e:
-            txt = f"// Error loading rules: {e}\n"
-        self._rules_edit.setPlainText(txt)
-
-    def _on_toggle_edit_rules(self):
-        if self._rules_edit.isReadOnly():
-            self._rules_edit.setReadOnly(False)
-            self._btn_save_rules.setEnabled(True)
-            self._btn_edit_rules.setText("Cancel")
-        else:
-            self._rules_edit.setReadOnly(True)
-            self._btn_save_rules.setEnabled(False)
-            self._btn_edit_rules.setText("Edit")
-            # reload original file to discard edits
-            self._load_rules_text()
-
-    def _on_save_rules(self):
-        # Validate JSON then save
-        txt = self._rules_edit.toPlainText()
-        try:
-            j = json.loads(txt)
-        except Exception as e:
-            self._set_status(f"Failed to parse rules JSON: {e}")
-            return
-        try:
-            save_auto_rules_config(j)
-            self._set_status("Rules saved to config.")
-            # disable editing
-            self._rules_edit.setReadOnly(True)
-            self._btn_save_rules.setEnabled(False)
-            self._btn_edit_rules.setText("Edit")
-        except Exception as e:
-            self._set_status(f"Failed to save rules: {e}")
-
-    def _on_open_in_editor(self):
-        # Try to launch user's $EDITOR or macOS open
-        editor = os.environ.get("EDITOR")
-        try:
-            if editor:
-                os.execvp(editor, [editor, str(_CFG_PATH)])
-            else:
-                # macOS open
-                os.system(f"open '{_CFG_PATH}'")
-        except Exception as e:
-            self._set_status(f"Failed to open editor: {e}")
 
     def _on_split_folder(self):
         in_folder = QFileDialog.getExistingDirectory(self, "Choose folder containing SWC files")

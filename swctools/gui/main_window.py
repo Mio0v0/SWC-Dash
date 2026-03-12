@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from .batch_tab import BatchTabWidget
+from .auto_typing_guide import AutoTypingGuideWidget
 from .constants import SWC_COLS
 from .editor_tab import EditorTab
 from .neuron_3d_widget import Neuron3DWidget
@@ -96,7 +97,9 @@ class SWCMainWindow(QMainWindow):
         self._batch_tab = BatchTabWidget()
         self._validation_tab = ValidationTabWidget(as_panel=False)
         self._validation_precheck = ValidationPrecheckWidget()
+        self._auto_typing_guide = AutoTypingGuideWidget()
         self._viz_control = self._build_visualization_control_panel()
+        self._control_tabs.currentChanged.connect(self._on_control_tab_changed)
         self._set_control_tabs_for_feature("")
 
         self._data_dock = QDockWidget("Data Explorer", self)
@@ -107,6 +110,7 @@ class SWCMainWindow(QMainWindow):
             | QDockWidget.DockWidgetClosable
         )
         self._data_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self._data_dock.setMinimumWidth(180)
         self._data_dock.setWidget(self._data_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self._data_dock)
 
@@ -118,6 +122,7 @@ class SWCMainWindow(QMainWindow):
             | QDockWidget.DockWidgetClosable
         )
         self._control_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self._control_dock.setMinimumWidth(220)
         self._control_dock.setWidget(self._control_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
         self.splitDockWidget(self._data_dock, self._control_dock, Qt.Vertical)
@@ -135,6 +140,20 @@ class SWCMainWindow(QMainWindow):
         self._precheck_dock.setWidget(self._validation_precheck)
         self.addDockWidget(Qt.TopDockWidgetArea, self._precheck_dock)
         self._precheck_dock.hide()
+
+        self._auto_guide_dock = QDockWidget("Auto Typing Guide", self)
+        self._auto_guide_dock.setObjectName("AutoTypingGuideDock")
+        self._auto_guide_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self._auto_guide_dock.setAllowedAreas(
+            Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea | Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea
+        )
+        self._auto_guide_dock.setWidget(self._auto_typing_guide)
+        self.addDockWidget(Qt.TopDockWidgetArea, self._auto_guide_dock)
+        self._auto_guide_dock.hide()
 
         # ---------------- Bottom log ----------------
         self._log_console = QPlainTextEdit()
@@ -158,6 +177,14 @@ class SWCMainWindow(QMainWindow):
         root.addWidget(self._editor_tab, stretch=1)
         root.addWidget(self._log_console, stretch=0)
         self.setCentralWidget(central)
+        # Make the dock/canvas boundary easier to grab and resize.
+        self.setStyleSheet(
+            "QMainWindow::separator {"
+            "  background: #bdbdbd;"
+            "  width: 8px;"
+            "  height: 8px;"
+            "}"
+        )
 
         self._reset_layout()
         self._append_log("UI initialized. Open an SWC file from File menu.", "INFO")
@@ -373,6 +400,12 @@ class SWCMainWindow(QMainWindow):
         )
         window_menu.addAction(show_precheck_action)
 
+        show_auto_guide_action = QAction("Show/Hide Auto Typing Guide", self)
+        show_auto_guide_action.triggered.connect(
+            lambda: self._toggle_auto_typing_guide_panel(not self._auto_guide_dock.isVisible())
+        )
+        window_menu.addAction(show_auto_guide_action)
+
         # Help
         help_menu = menu.addMenu("Help")
         quick_action = QAction("Quick Manual", self)
@@ -451,24 +484,29 @@ class SWCMainWindow(QMainWindow):
             self._control_tabs.addTab(self._batch_tab.auto_tab_widget(), "Auto Label")
             self._control_tabs.addTab(self._batch_tab.radii_tab_widget(), "Radii Cleaning")
             self._control_tabs.setCurrentIndex(0)
+            self._on_control_tab_changed(self._control_tabs.currentIndex())
             return
 
         if key == "validation":
             self._control_tabs.addTab(self._validation_tab, "Validation")
             self._control_tabs.setCurrentWidget(self._validation_tab)
+            self._on_control_tab_changed(self._control_tabs.currentIndex())
             return
 
         if key in ("morphology_editing", "dendrogram"):
             self._control_tabs.addTab(self._dendro_controls, "Label Editing")
             self._control_tabs.setCurrentWidget(self._dendro_controls)
+            self._on_control_tab_changed(self._control_tabs.currentIndex())
             return
 
         if key in ("atlas_registration", "analysis"):
+            self._on_control_tab_changed(self._control_tabs.currentIndex())
             return
 
         # default: visualization
         self._control_tabs.addTab(self._viz_control, "View Controls")
         self._control_tabs.setCurrentWidget(self._viz_control)
+        self._on_control_tab_changed(self._control_tabs.currentIndex())
 
     # --------------------------------------------------------- Feature routing
     def _activate_feature(self, name: str):
@@ -479,6 +517,7 @@ class SWCMainWindow(QMainWindow):
             self._set_control_tabs_for_feature("batch")
             self._control_dock.show()
             self._precheck_dock.hide()
+            self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Batch Processing")
             self._append_log("Feature switched: Batch Processing", "INFO")
             return
@@ -488,6 +527,7 @@ class SWCMainWindow(QMainWindow):
             self._set_control_tabs_for_feature("validation")
             self._control_dock.show()
             self._show_precheck_floating()
+            self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Validation")
             self._append_log("Feature switched: Validation", "INFO")
             return
@@ -497,6 +537,7 @@ class SWCMainWindow(QMainWindow):
             self._set_control_tabs_for_feature("visualization")
             self._control_dock.show()
             self._precheck_dock.hide()
+            self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Visualization")
             self._append_log("Feature switched: Visualization", "INFO")
             return
@@ -506,6 +547,7 @@ class SWCMainWindow(QMainWindow):
             self._set_control_tabs_for_feature("morphology_editing")
             self._control_dock.show()
             self._precheck_dock.hide()
+            self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Morphology Editing")
             self._append_log("Feature switched: Morphology Editing", "INFO")
             return
@@ -515,6 +557,7 @@ class SWCMainWindow(QMainWindow):
             self._set_control_tabs_for_feature("atlas_registration")
             self._control_dock.show()
             self._precheck_dock.hide()
+            self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Atlas Registration")
             self._append_log("Feature switched: Atlas Registration (placeholder)", "INFO")
             return
@@ -524,6 +567,7 @@ class SWCMainWindow(QMainWindow):
             self._set_control_tabs_for_feature("analysis")
             self._control_dock.show()
             self._precheck_dock.hide()
+            self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Analysis")
             self._append_log("Feature switched: Analysis (placeholder)", "INFO")
             return
@@ -531,6 +575,7 @@ class SWCMainWindow(QMainWindow):
         self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
         self._set_control_tabs_for_feature("")
         self._precheck_dock.hide()
+        self._auto_guide_dock.hide()
         self._feature_label.setText("Active feature: None")
         self._append_log("No active tool selected.", "INFO")
 
@@ -710,10 +755,17 @@ class SWCMainWindow(QMainWindow):
             self._show_precheck_floating()
         else:
             self._precheck_dock.hide()
+        if self._is_auto_label_control_active():
+            self._show_auto_typing_guide_floating()
+        else:
+            self._auto_guide_dock.hide()
         # Don't force exact dock sizes here; allow users to drag boundaries.
         try:
             # Enable animated/interactive docks so the sash is draggable.
             self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowNestedDocks | QMainWindow.AllowTabbedDocks)
+            # Set a practical default width so canvas keeps most space while right panel remains usable.
+            self.resizeDocks([self._data_dock], [340], Qt.Horizontal)
+            self.resizeDocks([self._data_dock, self._control_dock], [1, 1], Qt.Vertical)
         except Exception:
             # Fallback: nothing to do if setDockOptions unavailable
             pass
@@ -731,6 +783,19 @@ class SWCMainWindow(QMainWindow):
         else:
             self._precheck_dock.hide()
 
+    def _toggle_auto_typing_guide_panel(self, checked: bool):
+        if checked:
+            if self._is_auto_label_control_active():
+                self._show_auto_typing_guide_floating()
+            else:
+                self._auto_guide_dock.hide()
+                self._append_log(
+                    "Auto Typing Guide opens when Batch Processing -> Auto Label tab is active.",
+                    "INFO",
+                )
+        else:
+            self._auto_guide_dock.hide()
+
     def _toggle_log_panel(self, checked: bool):
         self._log_console.setVisible(bool(checked))
 
@@ -744,6 +809,33 @@ class SWCMainWindow(QMainWindow):
         y = g.y() + 120
         self._precheck_dock.setGeometry(x, y, w, h)
         self._precheck_dock.raise_()
+
+    def _show_auto_typing_guide_floating(self):
+        self._auto_typing_guide.refresh()
+        self._auto_guide_dock.show()
+        self._auto_guide_dock.setFloating(True)
+        g = self.geometry()
+        w = max(760, int(g.width() * 0.62))
+        h = max(360, int(g.height() * 0.36))
+        x = g.x() + max(40, int((g.width() - w) * 0.5))
+        y = g.y() + 160
+        self._auto_guide_dock.setGeometry(x, y, w, h)
+        self._auto_guide_dock.raise_()
+
+    def _is_auto_label_control_active(self) -> bool:
+        if self._active_tool != "batch":
+            return False
+        idx = self._control_tabs.currentIndex()
+        if idx < 0:
+            return False
+        label = self._control_tabs.tabText(idx).strip().lower()
+        return label == "auto label"
+
+    def _on_control_tab_changed(self, _index: int):
+        if self._is_auto_label_control_active():
+            self._show_auto_typing_guide_floating()
+        else:
+            self._auto_guide_dock.hide()
 
     def _undo_edit(self):
         if hasattr(self._editor_tab, "_dendro"):
@@ -764,10 +856,11 @@ class SWCMainWindow(QMainWindow):
             "Atlas Registration, Analysis buttons.\n"
             "3) Data Explorer and Control Center are dock windows (close, float, resize, move).\n"
             "4) Validation uses a floating Pre-check Summary window above the canvas.\n"
-            "5) After selection, Control Center tabs switch to that feature only.\n"
+            "5) Auto Label uses a floating Auto Typing Guide window with decision boundaries.\n"
+            "6) After selection, Control Center tabs switch to that feature only.\n"
             "   Batch Processing includes: Split, Auto Labeling, Radii Cleaning.\n"
-            "6) Canvas keeps the 3D view by default once a file is loaded.\n"
-            "7) Bottom panel shows all logs and warnings."
+            "7) Canvas keeps the 3D view by default once a file is loaded.\n"
+            "8) Bottom panel shows all logs and warnings."
         )
         self._append_log(text, "HELP")
 
