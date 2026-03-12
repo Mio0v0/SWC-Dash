@@ -43,14 +43,14 @@ swctools batch split /path/to/folder
 # swctools batch split ./data
 
 swctools batch validate /path/to/folder
-# swctools batch validate /Users/tuo/Desktop/SWC-Data
-# swctools batch validate /Users/tuo/Desktop/SwC-Data --config-json '{"checks":{"no_back_tracking":{"enabled":true}}}'
+# swctools batch validate ./data
+# swctools batch validate ./data --config-json '{"checks":{"no_back_tracking":{"enabled":true}}}'
 
 swctools batch auto-typing /path/to/folder --soma --axon --basal
-# swctools batch auto-typing /Users/tuo/Desktop/SWC-Data --soma --axon --basal
+# swctools batch auto-typing ./data --soma --axon --basal
 swctools validation auto-fix /path/to/file.swc --write
 swctools validation run /path/to/file.swc
-# swctools validation run /Users/tuo/Desktop/SwC-Data/single_cell_labeled.swc
+# swctools validation run ./data/single-soma.swc
 swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write
 swctools plugins list
 ```
