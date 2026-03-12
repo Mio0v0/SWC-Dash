@@ -129,6 +129,7 @@ class EditorTab(QWidget):
     df_changed = Signal(pd.DataFrame)
 
     MODE_CANVAS = "canvas"
+    MODE_EMPTY = "empty"
     MODE_BATCH = "batch"
     MODE_DENDRO = "dendrogram"
     MODE_VIS = "visualization"
@@ -241,7 +242,7 @@ class EditorTab(QWidget):
         self._show_current_mode()
 
     def set_mode(self, mode: str):
-        if mode in (self.MODE_CANVAS, self.MODE_BATCH, self.MODE_DENDRO, self.MODE_VIS):
+        if mode in (self.MODE_CANVAS, self.MODE_EMPTY, self.MODE_BATCH, self.MODE_DENDRO, self.MODE_VIS):
             self._mode = mode
             self._show_current_mode()
 
@@ -383,6 +384,9 @@ class EditorTab(QWidget):
         self._proj_yz.highlight_node(swc_id)
 
     def _show_current_mode(self):
+        if self._mode == self.MODE_EMPTY:
+            self._stack.setCurrentWidget(self._page_empty)
+            return
         if self._mode == self.MODE_BATCH:
             self._stack.setCurrentWidget(self._page_batch)
             return

@@ -515,7 +515,7 @@ class SWCMainWindow(QMainWindow):
         key = (name or "").strip().lower()
         if key == "batch":
             self._active_tool = "batch"
-            self._editor_tab.set_mode(EditorTab.MODE_BATCH)
+            self._editor_tab.set_mode(EditorTab.MODE_EMPTY)
             self._set_control_tabs_for_feature("batch")
             self._control_dock.show()
             self._on_control_tab_changed(self._control_tabs.currentIndex())
@@ -850,11 +850,19 @@ class SWCMainWindow(QMainWindow):
             self._show_precheck_floating()
         else:
             self._precheck_dock.hide()
+        if self._active_tool == "batch":
+            if self._is_batch_validation_control_active():
+                self._editor_tab.set_mode(EditorTab.MODE_BATCH)
+            else:
+                self._editor_tab.set_mode(EditorTab.MODE_EMPTY)
 
     def _on_batch_validation_ready(self, report: dict):
         self._editor_tab.show_batch_validation_results(report)
         if self._active_tool == "batch":
-            self._editor_tab.set_mode(EditorTab.MODE_BATCH)
+            if self._is_batch_validation_control_active():
+                self._editor_tab.set_mode(EditorTab.MODE_BATCH)
+            else:
+                self._editor_tab.set_mode(EditorTab.MODE_EMPTY)
             self._feature_label.setText("Active feature: Batch Processing")
         totals = dict(report.get("summary_total", {}))
         self._append_log(
