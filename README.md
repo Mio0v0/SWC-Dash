@@ -2,6 +2,55 @@
 
 `swctools` is a modular Python package for SWC morphology workflows with a shared backend used by both CLI and GUI interfaces.
 
+## First-Time Setup
+
+If you just cloned this repo and want to run it locally:
+
+```bash
+git clone <your-repo-url>
+cd SWC-Dash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[gui]"
+```
+
+CLI-only install (no GUI dependencies):
+
+```bash
+pip install -e .
+```
+
+Verify install:
+
+```bash
+swctools --help
+swctools-gui
+```
+
+If `swctools` or `swctools-gui` is not found, make sure the virtual environment is active:
+
+```bash
+source .venv/bin/activate
+```
+
+## Quick Start
+
+Run CLI examples:
+
+```bash
+swctools batch split ./data
+swctools batch validate ./data
+swctools batch auto-typing ./data --soma --axon --basal
+swctools validation run ./data/single-soma.swc
+```
+
+Run GUI:
+
+```bash
+swctools-gui
+```
+
 ## Architecture
 
 - `swctools/core`: shared algorithms, SWC I/O, and models.
