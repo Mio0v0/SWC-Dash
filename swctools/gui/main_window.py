@@ -3,7 +3,6 @@
 import os
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
 
 from PySide6.QtCore import Qt, Signal
@@ -560,24 +559,13 @@ class SWCMainWindow(QMainWindow):
 
     def _load_swc(self, path: str):
         try:
-            df = pd.read_csv(
-                path,
-                sep=r"\s+",
-                comment="#",
-                names=SWC_COLS,
-                dtype={
-                    "id": np.int64,
-                    "type": np.int32,
-                    "x": np.float32,
-                    "y": np.float32,
-                    "z": np.float32,
-                    "radius": np.float32,
-                    "parent": np.int64,
-                },
-            )
+            df = pd.read_csv(path, sep=r"\s+", comment="#", names=SWC_COLS)
             if df.empty:
                 self._append_log(f"Empty file: {path} contains no data rows.", "WARN")
                 return
+
+            for col in ("id", "type", "parent"):
+                df[col] = df[col].astype(int)
 
             self._df = df
             self._filename = os.path.basename(path)

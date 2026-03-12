@@ -37,24 +37,6 @@ from swctools.tools.validation.features.core import run_checks_text
 from swctools.validation.catalog import CHECK_CATALOG, CHECK_ORDER
 
 
-# Fast GUI mode: disable expensive neuron_morphology checks for instant-on validation.
-GUI_FAST_CONFIG_OVERRIDES: dict = {
-    "checks": {
-        "has_multifurcation": {"enabled": False},
-        "no_back_tracking": {"enabled": False},
-        "no_fat_terminal_ends": {"enabled": False},
-        "no_flat_neurites": {"enabled": False},
-        "no_section_index_jumps": {"enabled": False},
-        "no_ultranarrow_sections": {"enabled": False},
-        "no_ultranarrow_starts": {"enabled": False},
-        "no_root_index_jumps": {"enabled": False},
-        "no_single_child_chains": {"enabled": False},
-        "soma_radius_nonzero": {"enabled": False},
-        "has_unifurcation": {"enabled": False},
-    }
-}
-
-
 class _ValidationWorker(QObject):
     finished = Signal(int, dict)
     failed = Signal(int, str)
@@ -67,11 +49,7 @@ class _ValidationWorker(QObject):
     @Slot()
     def run(self):
         try:
-            report = run_checks_text(
-                self._swc_text,
-                profile="default",
-                config_overrides=GUI_FAST_CONFIG_OVERRIDES,
-            )
+            report = run_checks_text(self._swc_text, profile="default")
             self.finished.emit(self._run_id, report.to_dict())
         except Exception as e:  # noqa: BLE001
             self.failed.emit(self._run_id, str(e))
@@ -235,7 +213,7 @@ class ValidationTabWidget(QWidget):
 
     def load_swc(self, df: pd.DataFrame, filename: str, auto_run: bool = True):
         self._source_stem = Path(filename or "file").stem or "file"
-        self._df = df
+        self._df = df.copy()
         self._swc_text = ""
         self._swc_dirty = True
         self._trees = []

@@ -76,15 +76,6 @@ class SWCTableWidget(QWidget):
 
     EXPANDED_MIN_WIDTH = 260
     COLLAPSED_WIDTH = 72
-    _COL_WIDTHS = {
-        "id": 74,
-        "type": 74,
-        "x": 92,
-        "y": 92,
-        "z": 92,
-        "radius": 88,
-        "parent": 84,
-    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -161,9 +152,9 @@ class SWCTableWidget(QWidget):
         self._filename = filename or self._filename
         self._has_data = True
 
-        # Fast fixed widths (auto-resize across full table can be slow on large SWCs).
-        for i, col in enumerate(self._model._HEADERS):
-            self._view.setColumnWidth(i, int(self._COL_WIDTHS.get(col, 90)))
+        # Auto-resize columns to content
+        for i in range(self._model.columnCount()):
+            self._view.resizeColumnToContents(i)
 
         self._apply_panel_mode()
 

@@ -47,11 +47,11 @@ class _Projection2DWidget(QWidget):
         layout.addWidget(self._plot, stretch=1)
 
     def load_swc(self, df: pd.DataFrame):
-        self._df = df
+        self._df = df.copy()
         self._draw()
 
     def refresh(self, df: pd.DataFrame):
-        self._df = df
+        self._df = df.copy()
         self._draw()
 
     def highlight_node(self, swc_id: int):
@@ -129,17 +129,8 @@ class EditorTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._df: pd.DataFrame | None = None
-        self._filename: str = ""
         self._mode = self.MODE_CANVAS
         self._has_data = False
-        self._render_mode = Neuron3DWidget.MODE_LINES
-        self._highlight_id: int | None = None
-        self._canvas_loaded = False
-        self._dendro_loaded = False
-        self._visual_loaded = False
-        self._dirty_canvas = False
-        self._dirty_dendro = False
-        self._dirty_visual = False
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -201,16 +192,15 @@ class EditorTab(QWidget):
 
     # --------------------------------------------------------- Public API
     def load_swc(self, df: pd.DataFrame, filename: str = ""):
-        self._df = df
-        self._filename = str(filename or "")
+        self._df = df.copy()
         self._has_data = True
-        self._highlight_id = None
-        self._canvas_loaded = False
-        self._dendro_loaded = False
-        self._visual_loaded = False
-        self._dirty_canvas = True
-        self._dirty_dendro = True
-        self._dirty_visual = True
+        self._dendro.load_swc(df, filename)
+        self._view3d_canvas.load_swc(df, filename)
+        self._view3d_dendro.load_swc(df, filename)
+        self._view3d_visual.load_swc(df, filename)
+        self._proj_xy.load_swc(df)
+        self._proj_xz.load_swc(df)
+        self._proj_yz.load_swc(df)
         self._show_current_mode()
 
     def set_mode(self, mode: str):
@@ -222,13 +212,9 @@ class EditorTab(QWidget):
         return self._dendro.take_controls_panel()
 
     def set_render_mode(self, mode_id: int):
-        self._render_mode = int(mode_id)
-        if self._canvas_loaded:
-            self._view3d_canvas.set_render_mode(mode_id)
-        if self._dendro_loaded:
-            self._view3d_dendro.set_render_mode(mode_id)
-        if self._visual_loaded:
-            self._view3d_visual.set_render_mode(mode_id)
+        self._view3d_canvas.set_render_mode(mode_id)
+        self._view3d_dendro.set_render_mode(mode_id)
+        self._view3d_visual.set_render_mode(mode_id)
 
     def set_camera_view(self, preset: str):
         self._active_view().set_camera_view(preset)
@@ -237,7 +223,6 @@ class EditorTab(QWidget):
         self._active_view().reset_camera()
 
     def _active_view(self) -> Neuron3DWidget:
-        self._ensure_mode_loaded()
         if self._mode == self.MODE_DENDRO:
             return self._view3d_dendro
         if self._mode == self.MODE_VIS:
@@ -246,41 +231,22 @@ class EditorTab(QWidget):
 
     # ------------------------------------------------- Sync
     def _on_df_changed(self, df: pd.DataFrame):
-        self._df = df
-        if self._mode == self.MODE_DENDRO:
-            self._view3d_dendro.refresh(df)
-            self._dendro_loaded = True
-            self._dirty_dendro = False
-            self._dirty_canvas = True
-            self._dirty_visual = True
-        elif self._mode == self.MODE_VIS:
-            self._view3d_visual.refresh(df)
-            self._proj_xy.refresh(df)
-            self._proj_xz.refresh(df)
-            self._proj_yz.refresh(df)
-            self._visual_loaded = True
-            self._dirty_visual = False
-            self._dirty_canvas = True
-            self._dirty_dendro = True
-        else:
-            self._view3d_canvas.refresh(df)
-            self._canvas_loaded = True
-            self._dirty_canvas = False
-            self._dirty_dendro = True
-            self._dirty_visual = True
+        self._df = df.copy()
+        self._view3d_canvas.refresh(df)
+        self._view3d_dendro.refresh(df)
+        self._view3d_visual.refresh(df)
+        self._proj_xy.refresh(df)
+        self._proj_xz.refresh(df)
+        self._proj_yz.refresh(df)
         self.df_changed.emit(df)
 
     def _on_node_selected(self, swc_id: int, node_type: int, level: int):
-        self._highlight_id = int(swc_id)
-        if self._canvas_loaded:
-            self._view3d_canvas.highlight_node(swc_id)
-        if self._dendro_loaded:
-            self._view3d_dendro.highlight_node(swc_id)
-        if self._visual_loaded:
-            self._view3d_visual.highlight_node(swc_id)
-            self._proj_xy.highlight_node(swc_id)
-            self._proj_xz.highlight_node(swc_id)
-            self._proj_yz.highlight_node(swc_id)
+        self._view3d_canvas.highlight_node(swc_id)
+        self._view3d_dendro.highlight_node(swc_id)
+        self._view3d_visual.highlight_node(swc_id)
+        self._proj_xy.highlight_node(swc_id)
+        self._proj_xz.highlight_node(swc_id)
+        self._proj_yz.highlight_node(swc_id)
 
     def _show_current_mode(self):
         if not self._has_data:
@@ -288,62 +254,8 @@ class EditorTab(QWidget):
             return
         if self._mode == self.MODE_DENDRO:
             self._stack.setCurrentWidget(self._page_dendro)
-            self._ensure_dendro_loaded()
             return
         if self._mode == self.MODE_VIS:
             self._stack.setCurrentWidget(self._page_visual)
-            self._ensure_visual_loaded()
             return
         self._stack.setCurrentWidget(self._page_canvas)
-        self._ensure_canvas_loaded()
-
-    def _ensure_mode_loaded(self):
-        if self._mode == self.MODE_DENDRO:
-            self._ensure_dendro_loaded()
-        elif self._mode == self.MODE_VIS:
-            self._ensure_visual_loaded()
-        else:
-            self._ensure_canvas_loaded()
-
-    def _ensure_canvas_loaded(self):
-        if self._df is None:
-            return
-        if (not self._canvas_loaded) or self._dirty_canvas:
-            self._view3d_canvas.load_swc(self._df, self._filename)
-            if self._render_mode != Neuron3DWidget.MODE_LINES:
-                self._view3d_canvas.set_render_mode(self._render_mode)
-            if self._highlight_id is not None:
-                self._view3d_canvas.highlight_node(self._highlight_id)
-            self._canvas_loaded = True
-            self._dirty_canvas = False
-
-    def _ensure_dendro_loaded(self):
-        if self._df is None:
-            return
-        if (not self._dendro_loaded) or self._dirty_dendro:
-            self._dendro.load_swc(self._df, self._filename)
-            self._view3d_dendro.load_swc(self._df, self._filename)
-            if self._render_mode != Neuron3DWidget.MODE_LINES:
-                self._view3d_dendro.set_render_mode(self._render_mode)
-            if self._highlight_id is not None:
-                self._view3d_dendro.highlight_node(self._highlight_id)
-            self._dendro_loaded = True
-            self._dirty_dendro = False
-
-    def _ensure_visual_loaded(self):
-        if self._df is None:
-            return
-        if (not self._visual_loaded) or self._dirty_visual:
-            self._view3d_visual.load_swc(self._df, self._filename)
-            self._proj_xy.load_swc(self._df)
-            self._proj_xz.load_swc(self._df)
-            self._proj_yz.load_swc(self._df)
-            if self._render_mode != Neuron3DWidget.MODE_LINES:
-                self._view3d_visual.set_render_mode(self._render_mode)
-            if self._highlight_id is not None:
-                self._view3d_visual.highlight_node(self._highlight_id)
-                self._proj_xy.highlight_node(self._highlight_id)
-                self._proj_xz.highlight_node(self._highlight_id)
-                self._proj_yz.highlight_node(self._highlight_id)
-            self._visual_loaded = True
-            self._dirty_visual = False
