@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from swctools.core.config import load_feature_config, merge_config
+from swctools.core.validation_engine import run_validation_text
 from swctools.plugins.registry import register_builtin_method, resolve_method
-from swctools.validation.engine import run_validation_text
 
 TOOL = "validation"
 FEATURE = "run_checks"

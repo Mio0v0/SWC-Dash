@@ -33,8 +33,8 @@ from PySide6.QtWidgets import (
 )
 
 from swctools.core.validation import _split_swc_by_soma_roots
+from swctools.core.validation_catalog import CHECK_CATALOG, CHECK_ORDER
 from swctools.tools.validation.features.core import run_checks_text
-from swctools.validation.catalog import CHECK_CATALOG, CHECK_ORDER
 
 
 class _ValidationWorker(QObject):

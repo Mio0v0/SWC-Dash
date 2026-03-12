@@ -15,8 +15,8 @@ import numpy as np
 from neurom.core import Morphology
 
 from swctools.core.config import merge_config
-from swctools.validation.registry import get_check
-from swctools.validation.results import CheckResult, PreCheckItem, ValidationReport
+from swctools.core.validation_registry import get_check
+from swctools.core.validation_results import CheckResult, PreCheckItem, ValidationReport
 
 
 _SWCTYPE = np.dtype(
@@ -31,7 +31,7 @@ _SWCTYPE = np.dtype(
     ]
 )
 
-_CFG_DIR = Path(__file__).resolve().parent / "configs"
+_CFG_DIR = Path(__file__).resolve().parents[1] / "tools" / "validation" / "configs"
 _ANSI_RE = re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
 
 
@@ -130,8 +130,8 @@ def _strip_ansi(text: str) -> str:
 
 def _ensure_builtin_checks_registered() -> None:
     # Local import keeps startup cost low and avoids circular imports.
-    from swctools.validation.builtins.native_checks import register_native_checks
-    from swctools.validation.builtins.neuron_morphology_checks import (
+    from swctools.core.validation_checks.native_checks import register_native_checks
+    from swctools.core.validation_checks.neuron_morphology_checks import (
         register_neuron_morphology_checks,
     )
 

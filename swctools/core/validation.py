@@ -1,7 +1,7 @@
 """Core validation adapters.
 
 This module keeps backward-compatible function signatures while routing check
-execution through the shared validation backend (`swctools.validation`).
+execution through the shared validation backend in :mod:`swctools.core`.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def run_format_validation_from_text(swc_text: str):
       sanitized_swc_bytes: bytes
       table_rows: [{"check": label, "status": bool|str}, ...]
     """
-    from swctools.validation.engine import run_validation_text
+    from swctools.core.validation_engine import run_validation_text
 
     sanitized_text, sanitized_bytes = _sanitize_swc_text(swc_text)
     report = run_validation_text(sanitized_text, profile="default")
@@ -70,7 +70,7 @@ def run_format_validation_from_text(swc_text: str):
 
 def run_per_tree_validation(swc_text: str):
     """Run unified validation backend for each soma-split tree."""
-    from swctools.validation.engine import run_validation_text
+    from swctools.core.validation_engine import run_validation_text
 
     trees = _legacy._split_swc_by_soma_roots(swc_text)
     if not trees:

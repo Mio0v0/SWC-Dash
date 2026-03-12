@@ -8,4 +8,4 @@ Layers:
 - swctools.gui: desktop GUI interface
 """
 
-__all__ = ["api", "core", "tools", "validation", "plugins", "cli", "gui"]
+__all__ = ["api", "core", "tools", "plugins", "cli", "gui"]

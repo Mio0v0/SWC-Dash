@@ -10,6 +10,11 @@
 - `swctools/cli`: terminal interface that calls tool/feature APIs.
 - `swctools/gui`: Qt desktop interface that calls shared backend logic.
 
+## Documentation
+
+- [CLI Reference](docs/CLI_REFERENCE.md)
+- [API / Library Documentation](docs/API_DOCUMENTATION.md)
+
 ## Tool -> Feature map
 
 - Batch Processing

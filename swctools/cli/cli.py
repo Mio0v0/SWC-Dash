@@ -25,7 +25,7 @@ from swctools.tools.morphology_editing.features.dendrogram_editing import (
 from swctools.tools.validation.features.auto_fix import auto_fix_file
 from swctools.tools.validation.features.run_checks import validate_file as run_validation_checks_file
 from swctools.tools.visualization.features.mesh_editing import build_mesh_from_file
-from swctools.validation.catalog import group_rows_by_category, rule_for_key
+from swctools.core.validation_catalog import group_rows_by_category, rule_for_key
 
 
 def _print_json(payload) -> None:

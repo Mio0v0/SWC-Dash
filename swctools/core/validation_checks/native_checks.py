@@ -6,8 +6,8 @@ from typing import Any
 
 import numpy as np
 
-from swctools.validation.registry import register_check
-from swctools.validation.results import CheckResult
+from swctools.core.validation_registry import register_check
+from swctools.core.validation_results import CheckResult
 
 
 _REGISTERED = False
