@@ -3,7 +3,8 @@
   "enabled": true,
   "method": "default",
   "naming": {
-    "output_mode": "per_file_subdir",
+    "output_mode": "single_output_subdir",
+    "output_dir_pattern": "{folder_name}_split",
     "tree_pattern": "{stem}_tree{index}.swc"
   }
 }

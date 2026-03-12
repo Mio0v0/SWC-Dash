@@ -57,7 +57,12 @@ CLI prints:
 
 #### `swctools batch split <folder> [--config-json JSON]`
 
-Splits each SWC into trees by soma roots. Output naming is controlled by `swctools/tools/batch_processing/configs/swc_splitter.json`.
+Splits each SWC into trees by soma roots.
+
+Default output layout:
+
+- output folder: `<folder>/<folder_name>_split`
+- output files: `<original_swc_name>_tree1.swc`, `<original_swc_name>_tree2.swc`, ...
 
 #### `swctools batch auto-typing <folder> [flags] [--config-json JSON]`
 

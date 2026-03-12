@@ -140,7 +140,8 @@ class BatchTabWidget(QWidget):
 
         desc = QLabel(
             "Select a folder and split each multi-cell SWC into separate trees.\n"
-            "Output naming: <original>/<original>_tree1.swc, _tree2.swc, ..."
+            "Output folder: <selected>/<selected>_split\n"
+            "Output naming: <original_file_name>_tree1.swc, _tree2.swc, ..."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("font-size: 12px; color: #555;")
@@ -312,6 +313,7 @@ class BatchTabWidget(QWidget):
         summary = [
             "Folder split completed.",
             f"Folder: {result['folder']}",
+            f"Output folder: {result.get('out_dir', '')}",
             f"Processed: {result['files_total']} SWC file(s)",
             f"Split files: {result['files_split']}",
             f"Skipped (<=1 soma-root cell): {result['files_skipped']}",

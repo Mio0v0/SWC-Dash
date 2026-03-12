@@ -17,7 +17,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "method": "default",
     "naming": {
-        "output_mode": "per_file_subdir",
+        "output_mode": "single_output_subdir",
+        "output_dir_pattern": "{folder_name}_split",
         "tree_pattern": "{stem}_tree{index}.swc",
     },
 }
@@ -56,7 +57,13 @@ def split_folder(folder: str, *, config_overrides: dict | None = None) -> dict[s
     trees_saved = 0
     failures: list[str] = []
 
-    tree_pattern = cfg.get("naming", {}).get("tree_pattern", "{stem}_tree{index}.swc")
+    naming_cfg = dict(cfg.get("naming", {}))
+    output_mode = str(naming_cfg.get("output_mode", "single_output_subdir")).lower()
+    output_dir_pattern = str(naming_cfg.get("output_dir_pattern", "{folder_name}_split"))
+    tree_pattern = str(naming_cfg.get("tree_pattern", "{stem}_tree{index}.swc"))
+
+    out_dir = in_dir / output_dir_pattern.format(folder_name=in_dir.name)
+    out_dir_created = False
 
     for fp in swc_files:
         try:
@@ -67,12 +74,17 @@ def split_folder(folder: str, *, config_overrides: dict | None = None) -> dict[s
                 continue
 
             files_split += 1
-            out_dir = in_dir / fp.stem
-            out_dir.mkdir(parents=True, exist_ok=True)
+            if output_mode == "per_file_subdir":
+                file_out_dir = out_dir / fp.stem
+            else:
+                file_out_dir = out_dir
+            if not out_dir_created or output_mode == "per_file_subdir":
+                file_out_dir.mkdir(parents=True, exist_ok=True)
+                out_dir_created = True
 
             for idx, (_root_id, sub_text, _node_count) in enumerate(trees, start=1):
                 out_name = tree_pattern.format(stem=fp.stem, index=idx)
-                out_path = out_dir / out_name
+                out_path = file_out_dir / out_name
                 out_path.write_text(sub_text, encoding="utf-8")
                 trees_saved += 1
         except Exception as e:  # noqa: BLE001
@@ -80,6 +92,7 @@ def split_folder(folder: str, *, config_overrides: dict | None = None) -> dict[s
 
     return {
         "folder": str(in_dir),
+        "out_dir": str(out_dir),
         "files_total": len(swc_files),
         "files_split": files_split,
         "files_skipped": files_skipped,

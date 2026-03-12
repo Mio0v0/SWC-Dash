@@ -631,7 +631,7 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
     in_dir = Path(folder)
     swc_files = sorted([p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() == ".swc"])
 
-    out_dir = in_dir.parent / f"{in_dir.name}_batch process"
+    out_dir = in_dir / f"{in_dir.name}_auto_typing"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     failures: list[str] = []
@@ -673,7 +673,7 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
 
     zip_path: str | None = None
     if opts.zip_output and processed > 0:
-        zip_target = in_dir.parent / f"{in_dir.name}_batch process.zip"
+        zip_target = in_dir / f"{in_dir.name}_auto_typing.zip"
         with zipfile.ZipFile(zip_target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for f in sorted(out_dir.glob("*.swc")):
                 zf.write(f, arcname=f"{out_dir.name}/{f.name}")
