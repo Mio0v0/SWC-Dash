@@ -108,6 +108,8 @@ class SWCTableWidget(QWidget):
         self._title.setStyleSheet(
             "font-weight: 600; font-size: 13px; color: #444; padding: 4px 0;"
         )
+        self._title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self._title.setMinimumWidth(0)
         self._title.mousePressEvent = lambda _e: self._toggle_collapsed()
         header_layout.addWidget(self._title)
         header_layout.addStretch()
@@ -178,7 +180,9 @@ class SWCTableWidget(QWidget):
         self.setMaximumWidth(16777215)
         self._title.setVisible(True)
         row_info = f"{self._model.rowCount()} rows" if self._has_data else "no rows"
-        self._title.setText(f"{self._filename}  ({row_info})")
+        full_title = f"{self._filename}  ({row_info})"
+        self._title.setToolTip(full_title)
+        self._title.setText(full_title)
         self._toggle_btn.setText("▾")
         self._toggle_btn.setToolTip("Collapse to filename only")
         self._body.setVisible(True)

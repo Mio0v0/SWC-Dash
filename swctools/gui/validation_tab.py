@@ -34,9 +34,15 @@ from PySide6.QtWidgets import (
 )
 
 from swctools.core.config import feature_config_path
+from swctools.core.reporting import (
+    format_validation_report_text,
+    validation_log_path_for_file,
+    write_text_report,
+)
 from swctools.core.validation import _split_swc_by_soma_roots
 from swctools.core.validation_catalog import CHECK_CATALOG, CHECK_ORDER
 from swctools.tools.validation.features.core import run_checks_text
+from .report_popup import ReportPopupDialog
 
 _VALIDATION_CFG_PATH = feature_config_path("validation", "default")
 
@@ -112,6 +118,7 @@ class ValidationTabWidget(QWidget):
         super().__init__(parent)
         self._as_panel = as_panel
         self._source_stem = "file"
+        self._source_file_path = ""
         self._df: pd.DataFrame | None = None
         self._swc_text: str = ""
         self._swc_dirty = True
@@ -277,8 +284,9 @@ class ValidationTabWidget(QWidget):
     def has_results(self) -> bool:
         return bool(self._report)
 
-    def load_swc(self, df: pd.DataFrame, filename: str, auto_run: bool = True):
+    def load_swc(self, df: pd.DataFrame, filename: str, file_path: str = "", auto_run: bool = True):
         self._source_stem = Path(filename or "file").stem or "file"
+        self._source_file_path = str(file_path or "")
         self._df = df.copy()
         self._swc_text = ""
         self._swc_dirty = True
@@ -356,6 +364,7 @@ class ValidationTabWidget(QWidget):
         self._detail_text.setPlainText("Select a row to inspect details.")
         self._save_status.setText("Validation completed.")
         self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
+        self._write_and_open_report()
 
     @Slot(int, str)
     def _on_validation_failed(self, run_id: int, error_text: str):
@@ -404,6 +413,22 @@ class ValidationTabWidget(QWidget):
         else:
             self._cfg_status.setText("Could not open external editor.")
             self._cfg_status.setStyleSheet("color: #d62728; font-size: 12px;")
+
+    def _write_and_open_report(self):
+        if not self._report:
+            return
+        try:
+            if self._source_file_path:
+                report_path = validation_log_path_for_file(self._source_file_path)
+            else:
+                report_path = Path.cwd() / f"{self._source_stem}_validation_report.txt"
+            path = write_text_report(report_path, format_validation_report_text(self._report))
+            self._save_status.setText(f"Validation completed. Report: {os.path.basename(path)}")
+            self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
+            ReportPopupDialog.open_report(self, title="Validation Report", report_path=path)
+        except Exception as e:  # noqa: BLE001
+            self._save_status.setText(f"Validation completed. Report write failed: {e}")
+            self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
     # --------------------------------------------------------- Internal helpers
     def _ensure_swc_text(self):

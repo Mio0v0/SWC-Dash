@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from swctools.core.config import load_feature_config, merge_config
+from swctools.core.reporting import format_split_report_text, write_text_report
 from swctools.core.validation import _split_swc_by_soma_roots
 from swctools.plugins.registry import register_builtin_method, resolve_method
 
@@ -56,6 +57,7 @@ def split_folder(folder: str, *, config_overrides: dict | None = None) -> dict[s
     files_skipped = 0
     trees_saved = 0
     failures: list[str] = []
+    output_files: list[str] = []
 
     naming_cfg = dict(cfg.get("naming", {}))
     output_mode = str(naming_cfg.get("output_mode", "single_output_subdir")).lower()
@@ -63,7 +65,7 @@ def split_folder(folder: str, *, config_overrides: dict | None = None) -> dict[s
     tree_pattern = str(naming_cfg.get("tree_pattern", "{stem}_tree{index}.swc"))
 
     out_dir = in_dir / output_dir_pattern.format(folder_name=in_dir.name)
-    out_dir_created = False
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     for fp in swc_files:
         try:
@@ -76,26 +78,33 @@ def split_folder(folder: str, *, config_overrides: dict | None = None) -> dict[s
             files_split += 1
             if output_mode == "per_file_subdir":
                 file_out_dir = out_dir / fp.stem
+                file_out_dir.mkdir(parents=True, exist_ok=True)
             else:
                 file_out_dir = out_dir
-            if not out_dir_created or output_mode == "per_file_subdir":
-                file_out_dir.mkdir(parents=True, exist_ok=True)
-                out_dir_created = True
 
             for idx, (_root_id, sub_text, _node_count) in enumerate(trees, start=1):
                 out_name = tree_pattern.format(stem=fp.stem, index=idx)
                 out_path = file_out_dir / out_name
                 out_path.write_text(sub_text, encoding="utf-8")
                 trees_saved += 1
+                if output_mode == "per_file_subdir":
+                    output_files.append(str(out_path.relative_to(out_dir)))
+                else:
+                    output_files.append(out_name)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{fp.name}: {e}")
 
-    return {
+    result = {
         "folder": str(in_dir),
         "out_dir": str(out_dir),
         "files_total": len(swc_files),
         "files_split": files_split,
         "files_skipped": files_skipped,
         "trees_saved": trees_saved,
+        "output_files": output_files,
         "failures": failures,
     }
+
+    log_text = format_split_report_text(result)
+    result["log_path"] = write_text_report(out_dir / "split_report.txt", log_text)
+    return result

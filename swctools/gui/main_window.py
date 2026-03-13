@@ -2,11 +2,12 @@
 
 import os
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QFontMetrics
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QMenuBar,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -30,6 +32,12 @@ from .editor_tab import EditorTab
 from .neuron_3d_widget import Neuron3DWidget
 from .swc_table_widget import SWCTableWidget
 from .validation_tab import ValidationPrecheckWidget, ValidationTabWidget
+from swctools.core.reporting import (
+    format_morphology_session_log_text,
+    morphology_session_log_path,
+    write_text_report,
+)
+from .report_popup import ReportPopupDialog
 
 
 class SWCMainWindow(QMainWindow):
@@ -48,6 +56,10 @@ class SWCMainWindow(QMainWindow):
         self._file_path: str = ""
         self._recent_paths: list[str] = []
         self._active_tool: str = ""
+        self._morph_session_changes: list[dict] = []
+        self._morph_session_started_at: str = ""
+        self._morph_session_source_path: str = ""
+        self._morph_seq: int = 0
 
         self._build_ui()
         self._build_status_bar()
@@ -89,9 +101,20 @@ class SWCMainWindow(QMainWindow):
         seg_layout.addWidget(self._segment_label)
         seg_layout.addStretch()
 
+        self._edit_log_text = QPlainTextEdit()
+        self._edit_log_text.setReadOnly(True)
+        self._edit_log_text.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #fafafa; border: 1px solid #ddd; color: #333;"
+            "  font-family: Menlo, Consolas, monospace; font-size: 12px;"
+            "}"
+        )
+        self._edit_log_text.setPlainText("No morphology edits recorded for this session yet.")
+
         self._data_tabs.addTab(self._table_widget, "SWC File")
         self._data_tabs.addTab(info_panel, "Node Info")
         self._data_tabs.addTab(seg_panel, "Segment Info")
+        self._data_tabs.addTab(self._edit_log_text, "Edit Log")
 
         self._control_tabs = QTabWidget()
         self._batch_tab = BatchTabWidget()
@@ -111,7 +134,7 @@ class SWCMainWindow(QMainWindow):
             | QDockWidget.DockWidgetClosable
         )
         self._data_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self._data_dock.setMinimumWidth(180)
+        self._data_dock.setMinimumWidth(120)
         self._data_dock.setWidget(self._data_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self._data_dock)
 
@@ -123,7 +146,7 @@ class SWCMainWindow(QMainWindow):
             | QDockWidget.DockWidgetClosable
         )
         self._control_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self._control_dock.setMinimumWidth(220)
+        self._control_dock.setMinimumWidth(140)
         self._control_dock.setWidget(self._control_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
         self.splitDockWidget(self._data_dock, self._control_dock, Qt.Vertical)
@@ -298,7 +321,11 @@ class SWCMainWindow(QMainWindow):
         tools_layout.addWidget(self._feature_label)
         self._current_file_label = QLabel("Current file: (none)")
         self._current_file_label.setStyleSheet("font-size: 12px; color: #555;")
+        self._current_file_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self._current_file_label.setMinimumWidth(0)
+        self._current_file_label.setMaximumWidth(320)
         tools_layout.addWidget(self._current_file_label)
+        self._set_current_file_label_text("")
 
         tabs.addTab(home_page, "Home")
         tabs.addTab(tools_page, "Tools")
@@ -613,10 +640,13 @@ class SWCMainWindow(QMainWindow):
             for col in ("id", "type", "parent"):
                 df[col] = df[col].astype(int)
 
+            if self._morph_session_changes:
+                self._finalize_morphology_session(show_popup=True)
+
             self._df = df
             self._filename = os.path.basename(path)
             self._file_path = path
-            self._current_file_label.setText(f"Current file: {self._filename}")
+            self._set_current_file_label_text(self._filename)
 
             n_roots = int((df["parent"] == -1).sum())
             n_soma = int((df["type"] == 1).sum())
@@ -625,7 +655,7 @@ class SWCMainWindow(QMainWindow):
             self._update_info_label(df, n_roots, n_soma)
             self._update_recent_files(path)
 
-            self._validation_tab.load_swc(df, self._filename, auto_run=True)
+            self._validation_tab.load_swc(df, self._filename, file_path=path, auto_run=True)
             self._editor_tab.load_swc(df, self._filename)
             if self._active_tool:
                 self._activate_feature(self._active_tool)
@@ -642,6 +672,7 @@ class SWCMainWindow(QMainWindow):
                 f"Loaded {self._filename}: nodes={len(df)}, roots={n_roots}, soma={n_soma}",
                 "INFO",
             )
+            self._start_morphology_session(path)
             self.swc_loaded.emit(df, self._filename)
         except Exception as e:
             self._append_log(f"Error loading SWC: {e}", "ERROR")
@@ -669,7 +700,8 @@ class SWCMainWindow(QMainWindow):
         self._write_swc_file(path, self._df)
         self._file_path = path
         self._filename = os.path.basename(path)
-        self._current_file_label.setText(f"Current file: {self._filename}")
+        self._morph_session_source_path = path
+        self._set_current_file_label_text(self._filename)
         self._append_log(f"Saved As {path}", "INFO")
         self._update_recent_files(path)
 
@@ -706,14 +738,86 @@ class SWCMainWindow(QMainWindow):
 
     # --------------------------------------------------- Sync
     def _on_editor_df_changed(self, df: pd.DataFrame):
+        old_df = self._df.copy() if self._df is not None else None
         self._df = df.copy()
         self._table_widget.load_dataframe(self._df, self._filename)
         n_roots = int((self._df["parent"] == -1).sum())
         n_soma = int((self._df["type"] == 1).sum())
         self._update_info_label(self._df, n_roots, n_soma)
+        self._record_morph_type_changes(old_df, self._df)
         # Avoid running full validation on every edit; user can re-run from Validation panel.
-        self._validation_tab.load_swc(self._df, self._filename, auto_run=False)
+        self._validation_tab.load_swc(self._df, self._filename, file_path=self._file_path, auto_run=False)
         self._append_log("Dendrogram edits applied to current SWC.", "INFO")
+
+    def _start_morphology_session(self, source_path: str):
+        self._morph_session_source_path = str(source_path or "")
+        self._morph_session_started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._morph_session_changes = []
+        self._morph_seq = 0
+        self._refresh_morph_edit_tab()
+
+    def _record_morph_type_changes(self, old_df: pd.DataFrame | None, new_df: pd.DataFrame | None):
+        if old_df is None or new_df is None or old_df.empty or new_df.empty:
+            return
+        old_types = {int(r["id"]): int(r["type"]) for _, r in old_df[["id", "type"]].iterrows()}
+        changed_rows = []
+        for _, row in new_df[["id", "type"]].iterrows():
+            nid = int(row["id"])
+            new_t = int(row["type"])
+            old_t = old_types.get(nid)
+            if old_t is None or int(old_t) == int(new_t):
+                continue
+            self._morph_seq += 1
+            changed_rows.append(
+                {
+                    "seq": self._morph_seq,
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "node_id": nid,
+                    "old_type": int(old_t),
+                    "new_type": int(new_t),
+                }
+            )
+        if changed_rows:
+            self._morph_session_changes.extend(changed_rows)
+            self._refresh_morph_edit_tab()
+
+    def _refresh_morph_edit_tab(self):
+        if not self._morph_session_changes:
+            self._edit_log_text.setPlainText("No morphology edits recorded for this session yet.")
+            return
+        lines = ["Session changes (current SWC):", "Seq\tTime\tNodeID\tOldType\tNewType"]
+        for c in self._morph_session_changes:
+            lines.append(
+                f"{c.get('seq')}\t{c.get('time')}\t{c.get('node_id')}\t{c.get('old_type')}\t{c.get('new_type')}"
+            )
+        self._edit_log_text.setPlainText("\n".join(lines))
+
+    def _finalize_morphology_session(self, *, show_popup: bool):
+        if not self._morph_session_changes:
+            return
+        source = self._morph_session_source_path or self._file_path
+        if source:
+            log_path = morphology_session_log_path(source)
+            source_name = os.path.basename(source)
+        else:
+            source_name = self._filename or "swc"
+            log_path = Path.cwd() / f"{Path(source_name).stem}_morphology_session_log.txt"
+        txt = format_morphology_session_log_text(
+            source_file=source_name,
+            session_started=self._morph_session_started_at or "",
+            session_ended=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            changes=list(self._morph_session_changes),
+        )
+        out_path = write_text_report(log_path, txt)
+        self._append_log(f"Morphology session log written: {out_path}", "INFO")
+        if show_popup:
+            try:
+                ReportPopupDialog.open_report(self, title="Morphology Session Log", report_path=out_path)
+            except Exception as e:  # noqa: BLE001
+                self._append_log(f"Could not open morphology log popup: {e}", "WARN")
+        self._morph_session_changes = []
+        self._morph_seq = 0
+        self._refresh_morph_edit_tab()
 
     # --------------------------------------------------- Helpers
     def _append_log(self, text: str, level: str = "INFO"):
@@ -722,6 +826,14 @@ class SWCMainWindow(QMainWindow):
         self._log_console.appendPlainText(line)
         sb = self._log_console.verticalScrollBar()
         sb.setValue(sb.maximum())
+
+    def _set_current_file_label_text(self, filename: str):
+        full = f"Current file: {filename or '(none)'}"
+        self._current_file_label.setToolTip(full)
+        # Keep top ribbon shrinkable when filenames are long.
+        fm = QFontMetrics(self._current_file_label.font())
+        max_px = max(120, self._current_file_label.maximumWidth())
+        self._current_file_label.setText(fm.elidedText(full, Qt.ElideMiddle, max_px))
 
     def _update_info_label(self, df: pd.DataFrame, n_roots: int, n_soma: int):
         self._info_label.setText(
@@ -882,6 +994,16 @@ class SWCMainWindow(QMainWindow):
         if hasattr(self._editor_tab, "_dendro"):
             self._editor_tab._dendro._undo_stack.redo()
             self._append_log("Redo.", "INFO")
+
+    def closeEvent(self, event):
+        try:
+            self._finalize_morphology_session(show_popup=False)
+        finally:
+            super().closeEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._set_current_file_label_text(self._filename)
 
     # ---------------- Help ----------------
     def _show_quick_manual(self):

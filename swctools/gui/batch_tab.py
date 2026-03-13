@@ -25,6 +25,7 @@ from swctools.core.config import feature_config_path
 from swctools.tools.batch_processing.features.auto_typing import run_folder as run_auto_typing
 from swctools.tools.batch_processing.features.batch_validation import validate_folder as run_batch_validation
 from swctools.tools.batch_processing.features.swc_splitter import split_folder
+from .report_popup import ReportPopupDialog
 
 _CFG_PATH = feature_config_path("batch_processing", "auto_typing")
 
@@ -258,6 +259,14 @@ class BatchTabWidget(QWidget):
         self._status_boxes.append(w)
         return w
 
+    def _show_report_popup(self, title: str, report_path: str | None):
+        if not report_path:
+            return
+        try:
+            ReportPopupDialog.open_report(self, title=title, report_path=str(report_path))
+        except Exception as e:  # noqa: BLE001
+            self.log_message.emit(f"Could not open report popup: {e}")
+
     # --------------------------------------------------------- Public operations
     def run_split_folder(self):
         self._on_split_folder()
@@ -323,7 +332,10 @@ class BatchTabWidget(QWidget):
         if result["failures"]:
             summary.extend(["", "First errors:"])
             summary.extend(result["failures"][:5])
+        if result.get("log_path"):
+            summary.extend(["", f"Report file: {result.get('log_path')}"])
         self._set_status("\n".join(summary), self._split_status)
+        self._show_report_popup("Batch Split Report", result.get("log_path"))
 
     def _on_run_batch_check(self):
         folder_path = QFileDialog.getExistingDirectory(
@@ -383,8 +395,11 @@ class BatchTabWidget(QWidget):
             lines.append("")
             lines.append("Errors:")
             lines.extend(result.failures[:10])
+        if getattr(result, "log_path", None):
+            lines.extend(["", f"Report file: {result.log_path}"])
 
         self._set_status("\n".join(lines))
+        self._show_report_popup("Auto-Typing Batch Report", getattr(result, "log_path", None))
 
     def _on_run_batch_validation(self):
         folder_path = QFileDialog.getExistingDirectory(
@@ -409,6 +424,9 @@ class BatchTabWidget(QWidget):
             f"checks_total={totals.get('total', 0)}, pass={totals.get('pass', 0)}, "
             f"warn={totals.get('warning', 0)}, fail={totals.get('fail', 0)}"
         )
+        if out.get("log_path"):
+            msg = f"{msg} | report={out.get('log_path')}"
         self._batch_validation_status.setText(msg)
         self.log_message.emit(msg)
         self.batch_validation_ready.emit(out)
+        self._show_report_popup("Batch Validation Report", out.get("log_path"))

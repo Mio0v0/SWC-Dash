@@ -12,6 +12,7 @@ from typing import Any
 import zipfile
 import math
 from swctools.core.config import load_feature_config, merge_config, save_feature_config
+from swctools.core.reporting import format_auto_typing_report_text, write_text_report
 
 
 TOOL = "batch_processing"
@@ -95,6 +96,7 @@ class RuleBatchResult:
     total_radius_changes: int
     failures: list[str]
     per_file: list[str]
+    log_path: str | None
 
 
 def _parse_swc(path: Path) -> tuple[list[str], list[dict[str, Any]]]:
@@ -636,6 +638,7 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
 
     failures: list[str] = []
     per_file: list[str] = []
+    change_details: list[str] = []
 
     processed = 0
     total_nodes = 0
@@ -649,6 +652,8 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
                 failures.append(f"{swc_path.name}: no valid SWC rows")
                 continue
 
+            orig_types = [int(r["type"]) for r in rows]
+            orig_radii = [float(r["radius"]) for r in rows]
             types, radii, type_changes, radius_changes = _apply_rules(rows, opts)
             out_path = out_dir / swc_path.name
             _write_swc(out_path, headers, rows, types, radii)
@@ -668,6 +673,25 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
                 f"radius_changes={radius_changes}, out_types(soma/axon/basal/apic)="
                 f"{out_counts[1]}/{out_counts[2]}/{out_counts[3]}/{out_counts[4]}"
             )
+
+            if type_changes > 0 or radius_changes > 0:
+                change_details.append(f"[{swc_path.name}]")
+            if type_changes > 0:
+                change_details.append("type_changes:")
+                for row, old_t, new_t in zip(rows, orig_types, types):
+                    if int(old_t) != int(new_t):
+                        change_details.append(
+                            f"  node_id={int(row['id'])}: old_type={int(old_t)} -> new_type={int(new_t)}"
+                        )
+            if radius_changes > 0:
+                change_details.append("radius_changes:")
+                for row, old_r, new_r in zip(rows, orig_radii, radii):
+                    if float(old_r) != float(new_r):
+                        change_details.append(
+                            f"  node_id={int(row['id'])}: old_radius={float(old_r):.10g} -> new_radius={float(new_r):.10g}"
+                        )
+            if type_changes > 0 or radius_changes > 0:
+                change_details.append("")
         except Exception as e:
             failures.append(f"{swc_path.name}: {e}")
 
@@ -678,6 +702,22 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
             for f in sorted(out_dir.glob("*.swc")):
                 zf.write(f, arcname=f"{out_dir.name}/{f.name}")
         zip_path = str(zip_target)
+
+    payload = {
+        "folder": str(in_dir),
+        "out_dir": str(out_dir),
+        "zip_path": zip_path,
+        "files_total": len(swc_files),
+        "files_processed": processed,
+        "files_failed": len(failures),
+        "total_nodes": total_nodes,
+        "total_type_changes": total_type_changes,
+        "total_radius_changes": total_radius_changes,
+        "failures": failures,
+        "per_file": per_file,
+        "change_details": change_details,
+    }
+    log_path = write_text_report(out_dir / "auto_typing_report.txt", format_auto_typing_report_text(payload))
 
     return RuleBatchResult(
         folder=str(in_dir),
@@ -691,4 +731,5 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
         total_radius_changes=total_radius_changes,
         failures=failures,
         per_file=per_file,
+        log_path=log_path,
     )

@@ -27,6 +27,11 @@ from swctools.tools.validation.features.auto_fix import auto_fix_file
 from swctools.tools.validation.features.run_checks import validate_file as run_validation_checks_file
 from swctools.tools.visualization.features.mesh_editing import build_mesh_from_file
 from swctools.core.validation_catalog import group_rows_by_category, rule_for_key
+from swctools.core.reporting import (
+    format_validation_report_text,
+    validation_log_path_for_file,
+    write_text_report,
+)
 
 
 def _print_json(payload) -> None:
@@ -259,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             _print_validation_precheck({"precheck": out.get("precheck", [])})
             _print_batch_validation_results(out)
+            if out.get("log_path"):
+                print(f"\nReport file: {out.get('log_path')}")
             return 0
 
         if args.tool == "batch" and args.feature == "split":
@@ -267,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
                 config_overrides=_parse_config_overrides(args.config_json),
             )
             _print_json(out)
+            if out.get("log_path"):
+                print(f"\nReport file: {out.get('log_path')}")
             return 0
 
         if args.tool == "batch" and args.feature == "auto-typing":
@@ -293,6 +302,8 @@ def main(argv: list[str] | None = None) -> int:
                 config_overrides=_parse_config_overrides(args.config_json),
             )
             _print_json(out.__dict__)
+            if getattr(out, "log_path", None):
+                print(f"\nReport file: {out.log_path}")
             return 0
 
         if args.tool == "batch" and args.feature == "radii-clean":
@@ -311,6 +322,11 @@ def main(argv: list[str] | None = None) -> int:
             ).to_dict()
             _print_validation_precheck(report)
             _print_validation_results(report)
+            report_path = write_text_report(
+                validation_log_path_for_file(args.file),
+                format_validation_report_text(report),
+            )
+            print(f"\nReport file: {report_path}")
             return 0
 
         if args.tool == "validation" and args.feature == "auto-fix":
@@ -324,7 +340,12 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(report, dict):
                 _print_validation_precheck(report)
                 _print_validation_results(report)
-                print("")
+                report_path = write_text_report(
+                    validation_log_path_for_file(args.file),
+                    format_validation_report_text(report),
+                )
+                out["report_path"] = report_path
+                print("\nReport file: " + report_path + "\n")
             # Avoid dumping full bytes in terminal.
             out = {k: v for k, v in out.items() if k not in {"sanitized_bytes", "report"}}
             _print_json(out)

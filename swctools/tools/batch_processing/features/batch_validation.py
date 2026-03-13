@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from swctools.core.config import load_feature_config, merge_config
+from swctools.core.reporting import format_batch_validation_report_text, write_text_report
 from swctools.core.validation_engine import run_validation_text
 from swctools.plugins.registry import register_builtin_method, resolve_method
 
@@ -72,7 +73,7 @@ def validate_folder(folder: str, *, config_overrides: dict | None = None) -> dic
         except Exception as e:  # noqa: BLE001
             failures.append(f"{fp.name}: {e}")
 
-    return {
+    out = {
         "folder": str(in_dir),
         "profile": "default",
         "files_total": len(swc_files),
@@ -83,3 +84,7 @@ def validate_folder(folder: str, *, config_overrides: dict | None = None) -> dic
         "results": rows,
         "failures": failures,
     }
+
+    log_path = in_dir / f"{in_dir.name}_batch_validation_report.txt"
+    out["log_path"] = write_text_report(log_path, format_batch_validation_report_text(out))
+    return out
