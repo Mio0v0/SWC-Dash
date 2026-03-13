@@ -25,6 +25,7 @@ from swctools.tools.morphology_editing.features.dendrogram_editing import (
 )
 from swctools.tools.validation.features.auto_fix import auto_fix_file
 from swctools.tools.validation.features.run_checks import validate_file as run_validation_checks_file
+from swctools.tools.validation import build_precheck_summary, load_validation_config
 from swctools.tools.visualization.features.mesh_editing import build_mesh_from_file
 from swctools.core.validation_catalog import group_rows_by_category, rule_for_key
 from swctools.core.reporting import (
@@ -166,8 +167,15 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser("batch", help="Batch Processing features")
     batch_sub = batch.add_subparsers(dest="feature")
 
-    batch_validate = batch_sub.add_parser("validate", help="Batch Validation on a folder")
-    batch_validate.add_argument("folder", type=Path)
+    batch_validate = batch_sub.add_parser(
+        "validate",
+        help="Batch Validation on a folder, or use literal rule-guide to print rules",
+    )
+    batch_validate.add_argument(
+        "folder",
+        type=Path,
+        help="Folder path, or literal rule-guide",
+    )
     _feature_json_arg(batch_validate)
 
     batch_split = batch_sub.add_parser("split", help="Split SWC files by soma roots")
@@ -197,6 +205,9 @@ def build_parser() -> argparse.ArgumentParser:
     val_auto_fix.add_argument("--write", action="store_true", default=False)
     val_auto_fix.add_argument("--out", default="", help="Output file path (used with --write)")
     _feature_json_arg(val_auto_fix)
+
+    val_guide = val_sub.add_parser("rule-guide", help="Show validation rule guide (no file required)")
+    _feature_json_arg(val_guide)
 
     val_run = val_sub.add_parser("run", help="Run structured validation checks on one SWC file")
     val_run.add_argument("file", type=Path)
@@ -258,9 +269,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # -------- batch
         if args.tool == "batch" and args.feature == "validate":
+            cfg_overrides = _parse_config_overrides(args.config_json)
+            target = str(args.folder).strip().lower()
+            if target == "rule-guide":
+                cfg = load_validation_config(overrides=cfg_overrides)
+                precheck = [p.to_dict() for p in build_precheck_summary(cfg)]
+                _print_validation_precheck({"precheck": precheck})
+                return 0
+
             out = validate_folder(
                 str(args.folder),
-                config_overrides=_parse_config_overrides(args.config_json),
+                config_overrides=cfg_overrides,
             )
             _print_validation_precheck({"precheck": out.get("precheck", [])})
             _print_batch_validation_results(out)
@@ -315,12 +334,17 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         # -------- validation
+        if args.tool == "validation" and args.feature == "rule-guide":
+            cfg = load_validation_config(overrides=_parse_config_overrides(args.config_json))
+            precheck = [p.to_dict() for p in build_precheck_summary(cfg)]
+            _print_validation_precheck({"precheck": precheck})
+            return 0
+
         if args.tool == "validation" and args.feature == "run":
             report = run_validation_checks_file(
                 str(args.file),
                 config_overrides=_parse_config_overrides(args.config_json),
             ).to_dict()
-            _print_validation_precheck(report)
             _print_validation_results(report)
             report_path = write_text_report(
                 validation_log_path_for_file(args.file),
@@ -338,7 +362,6 @@ def main(argv: list[str] | None = None) -> int:
             )
             report = out.get("report", {})
             if isinstance(report, dict):
-                _print_validation_precheck(report)
                 _print_validation_results(report)
                 report_path = write_text_report(
                     validation_log_path_for_file(args.file),

@@ -119,7 +119,9 @@ class SWCMainWindow(QMainWindow):
         self._control_tabs = QTabWidget()
         self._batch_tab = BatchTabWidget()
         self._batch_tab.batch_validation_ready.connect(self._on_batch_validation_ready)
+        self._batch_tab.precheck_requested.connect(self._on_precheck_requested)
         self._validation_tab = ValidationTabWidget(as_panel=False)
+        self._validation_tab.precheck_requested.connect(self._on_precheck_requested)
         self._validation_precheck = ValidationPrecheckWidget()
         self._auto_typing_guide = AutoTypingGuideWidget()
         self._viz_control = self._build_visualization_control_panel()
@@ -151,7 +153,7 @@ class SWCMainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
         self.splitDockWidget(self._data_dock, self._control_dock, Qt.Vertical)
 
-        self._precheck_dock = QDockWidget("Pre-check Summary", self)
+        self._precheck_dock = QDockWidget("Rule Guide", self)
         self._precheck_dock.setObjectName("ValidationPrecheckDock")
         self._precheck_dock.setFeatures(
             QDockWidget.DockWidgetMovable
@@ -422,7 +424,7 @@ class SWCMainWindow(QMainWindow):
         )
         window_menu.addAction(show_control_action)
 
-        show_precheck_action = QAction("Show/Hide Pre-check Summary", self)
+        show_precheck_action = QAction("Show/Hide Rule Guide", self)
         show_precheck_action.triggered.connect(
             lambda: self._toggle_precheck_panel(not self._precheck_dock.isVisible())
         )
@@ -554,7 +556,7 @@ class SWCMainWindow(QMainWindow):
             self._editor_tab.set_mode(EditorTab.MODE_CANVAS)
             self._set_control_tabs_for_feature("validation")
             self._control_dock.show()
-            self._show_precheck_floating()
+            self._precheck_dock.hide()
             self._auto_guide_dock.hide()
             self._feature_label.setText("Active feature: Validation")
             self._append_log("Feature switched: Validation", "INFO")
@@ -864,10 +866,7 @@ class SWCMainWindow(QMainWindow):
     def _reset_layout(self):
         self._data_dock.show()
         self._control_dock.show()
-        if self._active_tool == "validation" or self._is_batch_validation_control_active():
-            self._show_precheck_floating()
-        else:
-            self._precheck_dock.hide()
+        self._precheck_dock.hide()
         if self._is_auto_label_control_active():
             self._show_auto_typing_guide_floating()
         else:
@@ -958,15 +957,15 @@ class SWCMainWindow(QMainWindow):
             self._show_auto_typing_guide_floating()
         else:
             self._auto_guide_dock.hide()
-        if self._active_tool == "validation" or self._is_batch_validation_control_active():
-            self._show_precheck_floating()
-        else:
-            self._precheck_dock.hide()
+        self._precheck_dock.hide()
         if self._active_tool == "batch":
             if self._is_batch_validation_control_active():
                 self._editor_tab.set_mode(EditorTab.MODE_BATCH)
             else:
                 self._editor_tab.set_mode(EditorTab.MODE_EMPTY)
+
+    def _on_precheck_requested(self):
+        self._show_precheck_floating()
 
     def _on_batch_validation_ready(self, report: dict):
         self._editor_tab.show_batch_validation_results(report)
@@ -1013,7 +1012,7 @@ class SWCMainWindow(QMainWindow):
             "2) Top tab 'Tools': Batch Processing, Validation, Visualization, Morphology Editing, "
             "Atlas Registration, Analysis buttons.\n"
             "3) Data Explorer and Control Center are dock windows (close, float, resize, move).\n"
-            "4) Validation uses a floating Pre-check Summary window above the canvas.\n"
+            "4) Validation uses a floating Rule Guide window above the canvas.\n"
             "5) Auto Label uses a floating Auto Typing Guide window with decision boundaries.\n"
             "6) After selection, Control Center tabs switch to that feature only.\n"
             "   Batch Processing includes: Split, Validation, Auto Labeling, Radii Cleaning.\n"

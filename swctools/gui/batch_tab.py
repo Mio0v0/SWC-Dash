@@ -104,6 +104,7 @@ class BatchTabWidget(QWidget):
 
     log_message = Signal(str)
     batch_validation_ready = Signal(dict)
+    precheck_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -235,9 +236,15 @@ class BatchTabWidget(QWidget):
         desc.setStyleSheet("font-size: 12px; color: #555;")
         root.addWidget(desc)
 
+        row = QHBoxLayout()
+        self._btn_show_precheck = QPushButton("Show Rule Guide")
+        self._btn_show_precheck.clicked.connect(self.precheck_requested.emit)
+        row.addWidget(self._btn_show_precheck)
         self._btn_batch_validate = QPushButton("Run Validation on Folder…")
         self._btn_batch_validate.clicked.connect(self._on_run_batch_validation)
-        root.addWidget(self._btn_batch_validate)
+        row.addWidget(self._btn_batch_validate)
+        row.addStretch()
+        root.addLayout(row)
 
         self._batch_validation_status = QLabel("No batch validation run yet.")
         self._batch_validation_status.setWordWrap(True)
@@ -429,4 +436,3 @@ class BatchTabWidget(QWidget):
         self._batch_validation_status.setText(msg)
         self.log_message.emit(msg)
         self.batch_validation_ready.emit(out)
-        self._show_report_popup("Batch Validation Report", out.get("log_path"))

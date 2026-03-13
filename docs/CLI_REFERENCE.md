@@ -50,7 +50,11 @@ The value must be a JSON object.
 
 Runs batch validation over all SWC files in a folder using the same rule set as `validation run`.
 
-CLI prints:
+Special alias:
+
+- `swctools batch validate rule-guide` prints only the validation Rule Guide (no batch run).
+
+CLI prints for normal batch run:
 
 - pre-check summary (same rule text as Validation)
 - per-file validation summaries/details
@@ -90,11 +94,14 @@ Cleans invalid radii in folder SWCs.
 
 ### Validation
 
+#### `swctools validation rule-guide [--config-json JSON]`
+
+Prints only the validation Rule Guide (enabled checks + rule text), without running checks on a file.
+
 #### `swctools validation run <file.swc> [--config-json JSON]`
 
 Runs structured validation checks and prints:
 
-- pre-check summary (rules + params)
 - result summary
 - detailed findings for warning/fail checks
 
@@ -151,8 +158,10 @@ Lists builtin and plugin method names currently registered.
 ## Examples
 
 ```bash
+swctools batch validate rule-guide
 swctools batch split /path/to/folder
 swctools batch auto-typing /path/to/folder --soma --axon --basal
+swctools validation rule-guide
 swctools validation run /path/to/file.swc
 swctools validation auto-fix /path/to/file.swc --write
 swctools visualization mesh-editing /path/to/file.swc --include-edges

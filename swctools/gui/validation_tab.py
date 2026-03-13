@@ -42,7 +42,6 @@ from swctools.core.reporting import (
 from swctools.core.validation import _split_swc_by_soma_roots
 from swctools.core.validation_catalog import CHECK_CATALOG, CHECK_ORDER
 from swctools.tools.validation.features.core import run_checks_text
-from .report_popup import ReportPopupDialog
 
 _VALIDATION_CFG_PATH = feature_config_path("validation", "default")
 
@@ -78,7 +77,7 @@ class ValidationPrecheckWidget(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        title = QLabel("Pre-check Summary (Rule Guide)")
+        title = QLabel("Rule Guide")
         title.setStyleSheet("font-size: 14px; font-weight: 700; color: #222;")
         layout.addWidget(title)
 
@@ -113,6 +112,8 @@ class ValidationPrecheckWidget(QWidget):
 
 class ValidationTabWidget(QWidget):
     """Validation results panel with lazy execution for fast SWC loading."""
+
+    precheck_requested = Signal()
 
     def __init__(self, parent=None, as_panel: bool = True):
         super().__init__(parent)
@@ -150,6 +151,9 @@ class ValidationTabWidget(QWidget):
         title.setStyleSheet("font-size: 14px; font-weight: 600; color: #333;")
         header.addWidget(title)
         header.addStretch()
+        self._btn_show_precheck = QPushButton("Show Rule Guide")
+        self._btn_show_precheck.clicked.connect(self.precheck_requested.emit)
+        header.addWidget(self._btn_show_precheck)
         self._btn_run = QPushButton("Run Validation")
         self._btn_run.clicked.connect(self.run_validation)
         header.addWidget(self._btn_run)
@@ -364,7 +368,7 @@ class ValidationTabWidget(QWidget):
         self._detail_text.setPlainText("Select a row to inspect details.")
         self._save_status.setText("Validation completed.")
         self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
-        self._write_and_open_report()
+        self._write_report()
 
     @Slot(int, str)
     def _on_validation_failed(self, run_id: int, error_text: str):
@@ -414,7 +418,7 @@ class ValidationTabWidget(QWidget):
             self._cfg_status.setText("Could not open external editor.")
             self._cfg_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
-    def _write_and_open_report(self):
+    def _write_report(self):
         if not self._report:
             return
         try:
@@ -425,7 +429,6 @@ class ValidationTabWidget(QWidget):
             path = write_text_report(report_path, format_validation_report_text(self._report))
             self._save_status.setText(f"Validation completed. Report: {os.path.basename(path)}")
             self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
-            ReportPopupDialog.open_report(self, title="Validation Report", report_path=path)
         except Exception as e:  # noqa: BLE001
             self._save_status.setText(f"Validation completed. Report write failed: {e}")
             self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
