@@ -17,11 +17,13 @@ from swctools.core.validation_registry import (
 )
 from swctools.core.validation_results import CheckResult, PreCheckItem, ValidationReport
 
-from .features import auto_fix, run_checks
+from .features import auto_fix, auto_typing, radii_cleaning, run_checks
 
 __all__ = [
     "auto_fix",
+    "auto_typing",
     "run_checks",
+    "radii_cleaning",
     "CheckResult",
     "PreCheckItem",
     "ValidationReport",

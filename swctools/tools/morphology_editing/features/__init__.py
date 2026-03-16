@@ -1,5 +1,5 @@
 """Morphology Editing feature modules."""
 
-from . import dendrogram_editing
+from . import dendrogram_editing, simplification
 
-__all__ = ["dendrogram_editing"]
+__all__ = ["dendrogram_editing", "simplification"]

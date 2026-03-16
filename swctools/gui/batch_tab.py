@@ -26,6 +26,7 @@ from swctools.tools.batch_processing.features.auto_typing import run_folder as r
 from swctools.tools.batch_processing.features.batch_validation import validate_folder as run_batch_validation
 from swctools.tools.batch_processing.features.swc_splitter import split_folder
 from .report_popup import ReportPopupDialog
+from .radii_cleaning_panel import RadiiCleaningPanel
 
 _CFG_PATH = feature_config_path("batch_processing", "auto_typing")
 
@@ -207,19 +208,8 @@ class BatchTabWidget(QWidget):
         return page
 
     def _build_radii_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        desc = QLabel("Radii cleaning placeholder. Controls will be added later.")
-        desc.setWordWrap(True)
-        desc.setStyleSheet("font-size: 12px; color: #666;")
-        layout.addWidget(desc)
-
-        self._radii_status = self._new_status_box()
-        self._radii_status.setPlainText("Radii Cleaning tab is ready for future options.")
-        layout.addWidget(self._radii_status, stretch=1)
+        page = RadiiCleaningPanel(self)
+        page.log_message.connect(self.log_message.emit)
         return page
 
     def _build_validation_page(self) -> QWidget:

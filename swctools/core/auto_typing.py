@@ -8,7 +8,9 @@ from typing import Any
 from swctools.core.auto_typing_impl import (
     RuleBatchOptions,
     RuleBatchResult,
+    RuleFileResult,
     get_config as get_auto_rules_config,
+    run_rule_file,
     run_rule_batch,
     save_config as save_auto_rules_config,
 )
@@ -16,7 +18,9 @@ from swctools.core.auto_typing_impl import (
 __all__ = [
     "RuleBatchOptions",
     "RuleBatchResult",
+    "RuleFileResult",
     "run_rule_batch",
+    "run_rule_file",
     "get_auto_rules_config",
     "save_auto_rules_config",
 ]

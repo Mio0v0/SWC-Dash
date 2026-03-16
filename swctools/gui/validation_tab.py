@@ -218,6 +218,10 @@ class ValidationTabWidget(QWidget):
         self._btn_save_all.setVisible(False)
         self._btn_save_all.clicked.connect(self._on_save_all)
         btn_layout.addWidget(self._btn_save_all)
+        self._btn_download_report = QPushButton("Download Validation Report")
+        self._btn_download_report.setEnabled(False)
+        self._btn_download_report.clicked.connect(self._on_download_report)
+        btn_layout.addWidget(self._btn_download_report)
         self._btn_export_json = QPushButton("Export Validation JSON")
         self._btn_export_json.setEnabled(False)
         self._btn_export_json.clicked.connect(self._on_export_json)
@@ -311,6 +315,7 @@ class ValidationTabWidget(QWidget):
             self._alert_banner.setVisible(False)
 
         self._btn_export_json.setEnabled(False)
+        self._btn_download_report.setEnabled(False)
         self._clear_results_ui("Load complete. Click Run Validation to compute results.")
         if auto_run:
             self.run_validation()
@@ -364,11 +369,11 @@ class ValidationTabWidget(QWidget):
         self._results_rows = rows
         self._populate_results_table(rows)
         self._btn_export_json.setEnabled(True)
+        self._btn_download_report.setEnabled(True)
         self._btn_run.setEnabled(True)
         self._detail_text.setPlainText("Select a row to inspect details.")
         self._save_status.setText("Validation completed.")
         self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
-        self._write_report()
 
     @Slot(int, str)
     def _on_validation_failed(self, run_id: int, error_text: str):
@@ -418,19 +423,15 @@ class ValidationTabWidget(QWidget):
             self._cfg_status.setText("Could not open external editor.")
             self._cfg_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
-    def _write_report(self):
+    def _write_report_to_path(self, out_path: str):
         if not self._report:
             return
         try:
-            if self._source_file_path:
-                report_path = validation_log_path_for_file(self._source_file_path)
-            else:
-                report_path = Path.cwd() / f"{self._source_stem}_validation_report.txt"
-            path = write_text_report(report_path, format_validation_report_text(self._report))
-            self._save_status.setText(f"Validation completed. Report: {os.path.basename(path)}")
+            path = write_text_report(out_path, format_validation_report_text(self._report))
+            self._save_status.setText(f"Validation report saved: {os.path.basename(path)}")
             self._save_status.setStyleSheet("color: #2ca02c; font-size: 12px;")
         except Exception as e:  # noqa: BLE001
-            self._save_status.setText(f"Validation completed. Report write failed: {e}")
+            self._save_status.setText(f"Validation report write failed: {e}")
             self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
     # --------------------------------------------------------- Internal helpers
@@ -444,10 +445,12 @@ class ValidationTabWidget(QWidget):
 
         arr = self._df[["id", "type", "x", "y", "z", "radius", "parent"]].to_numpy(copy=False)
         buf = io.StringIO()
+        # Keep sufficient float precision so validation does not create false duplicates
+        # by rounding nearby coordinates to 4 decimals.
         np.savetxt(
             buf,
             arr,
-            fmt=["%d", "%d", "%.4f", "%.4f", "%.4f", "%.4f", "%d"],
+            fmt=["%d", "%d", "%.10g", "%.10g", "%.10g", "%.10g", "%d"],
             delimiter=" ",
         )
         self._swc_text = "# id type x y z radius parent\n" + buf.getvalue()
@@ -574,3 +577,24 @@ class ValidationTabWidget(QWidget):
         except Exception as e:  # noqa: BLE001
             self._save_status.setText(f"Export error: {e}")
             self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
+
+    def _on_download_report(self):
+        if not self._report:
+            self._save_status.setText("No validation results to save.")
+            self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
+            return
+        if self._source_file_path:
+            default_path = str(validation_log_path_for_file(self._source_file_path))
+        else:
+            default_path = str(Path.cwd() / f"{self._source_stem}_validation_report.txt")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Download Validation Report",
+            default_path,
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not path:
+            self._save_status.setText("Download validation report cancelled.")
+            self._save_status.setStyleSheet("color: #777; font-size: 12px;")
+            return
+        self._write_report_to_path(path)

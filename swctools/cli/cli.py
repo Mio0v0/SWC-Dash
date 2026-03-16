@@ -18,12 +18,15 @@ from swctools.tools.analysis.features.summary import analyze_file
 from swctools.tools.atlas_registration.features.registration import register_to_atlas
 from swctools.tools.batch_processing.features.auto_typing import run_folder as run_auto_typing
 from swctools.tools.batch_processing.features.batch_validation import validate_folder
-from swctools.tools.batch_processing.features.radii_cleaning import clean_folder
+from swctools.tools.batch_processing.features.radii_cleaning import clean_path as batch_clean_radii_path
 from swctools.tools.batch_processing.features.swc_splitter import split_folder
 from swctools.tools.morphology_editing.features.dendrogram_editing import (
     reassign_subtree_types_in_file,
 )
+from swctools.tools.morphology_editing.features.simplification import simplify_file as simplify_morphology_file
+
 from swctools.tools.validation.features.auto_fix import auto_fix_file
+from swctools.tools.validation.features.radii_cleaning import clean_path as validation_clean_radii_path
 from swctools.tools.validation.features.run_checks import validate_file as run_validation_checks_file
 from swctools.tools.validation import build_precheck_summary, load_validation_config
 from swctools.tools.visualization.features.mesh_editing import build_mesh_from_file
@@ -192,8 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch_auto.add_argument("--zip", action="store_true", default=False)
     _feature_json_arg(batch_auto)
 
-    batch_radii = batch_sub.add_parser("radii-clean", help="Radii cleaning on a folder")
-    batch_radii.add_argument("folder", type=Path)
+    batch_radii = batch_sub.add_parser("radii-clean", help="Radii cleaning on a file or folder")
+    batch_radii.add_argument("target", type=Path)
     _feature_json_arg(batch_radii)
 
     # ------------------------------ validation
@@ -212,6 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
     val_run = val_sub.add_parser("run", help="Run structured validation checks on one SWC file")
     val_run.add_argument("file", type=Path)
     _feature_json_arg(val_run)
+
+    val_radii = val_sub.add_parser("radii-clean", help="Radii cleaning on a file or folder")
+    val_radii.add_argument("target", type=Path)
+    _feature_json_arg(val_radii)
 
     # ------------------------------ visualization
     visualization = sub.add_parser("visualization", help="Visualization backends")
@@ -233,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
     morph_d.add_argument("--write", action="store_true", default=False)
     morph_d.add_argument("--out", default="", help="Output file path (used with --write)")
     _feature_json_arg(morph_d)
+
+    morph_s = morph_sub.add_parser("smart-decimation", help="RDP-based smart SWC simplification")
+    morph_s.add_argument("file", type=Path)
+    morph_s.add_argument("--write", action="store_true", default=False)
+    morph_s.add_argument("--out", default="", help="Output file path (used with --write)")
+    _feature_json_arg(morph_s)
 
     # ------------------------------ atlas
     atlas = sub.add_parser("atlas", help="Atlas Registration (placeholder)")
@@ -326,11 +339,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.tool == "batch" and args.feature == "radii-clean":
-            out = clean_folder(
-                str(args.folder),
+            out = batch_clean_radii_path(
+                str(args.target),
                 config_overrides=_parse_config_overrides(args.config_json),
             )
             _print_json(out)
+            if out.get("log_path"):
+                print(f"\nReport file: {out.get('log_path')}")
             return 0
 
         # -------- validation
@@ -351,6 +366,16 @@ def main(argv: list[str] | None = None) -> int:
                 format_validation_report_text(report),
             )
             print(f"\nReport file: {report_path}")
+            return 0
+
+        if args.tool == "validation" and args.feature == "radii-clean":
+            out = validation_clean_radii_path(
+                str(args.target),
+                config_overrides=_parse_config_overrides(args.config_json),
+            )
+            _print_json(out)
+            if out.get("log_path"):
+                print(f"\nReport file: {out.get('log_path')}")
             return 0
 
         if args.tool == "validation" and args.feature == "auto-fix":
@@ -396,6 +421,25 @@ def main(argv: list[str] | None = None) -> int:
             )
             out = {k: v for k, v in out.items() if k not in {"bytes", "dataframe"}}
             _print_json(out)
+            return 0
+
+        if args.tool == "morphology" and args.feature == "smart-decimation":
+            out = simplify_morphology_file(
+                str(args.file),
+                out_path=(args.out or None),
+                write_output=bool(args.write),
+                config_overrides=_parse_config_overrides(args.config_json),
+            )
+            out_print = {
+                k: v
+                for k, v in out.items()
+                if k not in {"bytes", "dataframe", "kept_node_ids", "removed_node_ids", "summary"}
+            }
+            out_print["kept_node_count"] = len(list(out.get("kept_node_ids", [])))
+            out_print["removed_node_count"] = len(list(out.get("removed_node_ids", [])))
+            _print_json(out_print)
+            if out.get("log_path"):
+                print(f"\nReport file: {out.get('log_path')}")
             return 0
 
         # -------- atlas

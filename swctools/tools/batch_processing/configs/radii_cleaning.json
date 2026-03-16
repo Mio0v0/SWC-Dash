@@ -4,11 +4,23 @@
   "method": "default",
   "rules": {
     "replace_non_positive": true,
-    "replace_nan": true,
-    "copy_parent_radius": true,
-    "min_radius": 0.1
+    "replace_non_finite": true,
+    "detect_spikes": true,
+    "detect_dips": true,
+    "spike_ratio_threshold": 3.0,
+    "dip_ratio_threshold": 0.33,
+    "abs_min_radius": 0.05,
+    "abs_max_radius": 30.0,
+    "min_neighbor_count": 1,
+    "iterations": 2,
+    "replacement": {
+      "clamp_min": 0.05,
+      "clamp_max": 30.0
+    }
   },
   "output": {
-    "suffix": "_radii_cleaned"
+    "folder_suffix": "_radii_cleaned",
+    "file_suffix": "_radii_cleaned",
+    "report_name": "radii_cleaning_report.txt"
   }
 }

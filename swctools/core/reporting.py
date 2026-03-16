@@ -179,6 +179,55 @@ def format_split_report_text(split_report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_radii_cleaning_report_text(payload: dict[str, Any]) -> str:
+    lines: list[str] = []
+    lines.append("Radii Cleaning Report")
+    lines.append("---------------------")
+    lines.append(f"Generated: {_now()}")
+
+    mode = str(payload.get("mode", ""))
+    if mode == "file":
+        lines.append(f"Input file: {payload.get('input_path', '')}")
+        lines.append(f"Output file: {payload.get('output_path', '')}")
+        lines.append(f"Radius changes: {payload.get('radius_changes', 0)}")
+        lines.append(f"Change rows: {payload.get('change_count', 0)}")
+
+        change_lines = list(payload.get("change_lines", []))
+        if change_lines:
+            lines.append("")
+            lines.append("Node changes:")
+            lines.extend(change_lines)
+        return "\n".join(lines).rstrip() + "\n"
+
+    lines.append(f"Folder: {payload.get('folder', '')}")
+    lines.append(f"Output folder: {payload.get('out_dir', '')}")
+    lines.append(f"SWC files detected: {payload.get('files_total', 0)}")
+    lines.append(f"Processed: {payload.get('files_processed', 0)}")
+    lines.append(f"Failed: {payload.get('files_failed', 0)}")
+    lines.append(f"Total radius changes: {payload.get('total_radius_changes', 0)}")
+
+    per_file = list(payload.get("per_file", []))
+    if per_file:
+        lines.append("")
+        lines.append("Per-file summary:")
+        for row in per_file:
+            lines.append(
+                f"{row.get('file', '')}: radius_changes={row.get('radius_changes', 0)}, "
+                f"out_file={row.get('out_file', '')}"
+            )
+            detail_rows = list(row.get("change_lines", []))
+            for d in detail_rows:
+                lines.append(f"  {d}")
+
+    failures = list(payload.get("failures", []))
+    if failures:
+        lines.append("")
+        lines.append("Errors:")
+        lines.extend(f"- {e}" for e in failures)
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_auto_typing_report_text(payload: dict[str, Any]) -> str:
     lines: list[str] = []
     lines.append("Rule-Based Auto-Typing Batch Report")
@@ -213,6 +262,47 @@ def format_auto_typing_report_text(payload: dict[str, Any]) -> str:
         lines.append("Errors:")
         for err in failures:
             lines.append(f"- {err}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_simplification_report_text(payload: dict[str, Any]) -> str:
+    lines: list[str] = []
+    lines.append("Smart Decimation Log")
+    lines.append("--------------------")
+    lines.append(f"Generated: {_now()}")
+    lines.append(f"Input: {payload.get('input_path', '')}")
+    lines.append(f"Output: {payload.get('output_path', '')}")
+    lines.append(f"Original Node Count: {payload.get('original_node_count', 0)}")
+    lines.append(f"New Node Count: {payload.get('new_node_count', 0)}")
+    lines.append(f"Reduction (%): {payload.get('reduction_percent', 0.0):.2f}")
+
+    params = dict(payload.get("params_used", {}))
+    if params:
+        lines.append("")
+        lines.append("Parameters Used:")
+        for k in sorted(params):
+            lines.append(f"- {k}: {params.get(k)}")
+
+    pc = dict(payload.get("protected_counts", {}))
+    if pc:
+        lines.append("")
+        lines.append("Protected Node Stats:")
+        for k in sorted(pc):
+            lines.append(f"- {k}: {pc.get(k)}")
+
+    removed = list(payload.get("removed_node_ids", []))
+    if removed:
+        lines.append("")
+        lines.append(f"Removed Node IDs ({len(removed)}):")
+        chunk = []
+        for i, nid in enumerate(removed, start=1):
+            chunk.append(str(nid))
+            if len(chunk) >= 25:
+                lines.append(", ".join(chunk))
+                chunk = []
+        if chunk:
+            lines.append(", ".join(chunk))
 
     return "\n".join(lines).rstrip() + "\n"
 

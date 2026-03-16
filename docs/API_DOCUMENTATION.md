@@ -15,6 +15,37 @@ This document describes the Python library API for `swctools`.
 import swctools.api as swc
 ```
 
+## Tool -> Feature Map (Current Structure)
+
+Python backend modules under `swctools/tools/*/features`:
+
+- `batch_processing`
+  - `auto_typing`
+  - `batch_validation`
+  - `radii_cleaning`
+  - `split`
+  - `swc_splitter`
+  - `validation`
+- `validation`
+  - `auto_fix`
+  - `core`
+  - `radii_cleaning`
+  - `run_checks`
+- `visualization`
+  - `mesh_editing`
+- `morphology_editing`
+  - `dendrogram_editing`
+  - `simplification`
+- `atlas_registration`
+  - `registration`
+- `analysis`
+  - `summary`
+
+Notes:
+
+- `split`, `validation`, and `core` are helper/internal feature modules.
+- Public library calls should use `swctools.api` exports.
+
 ## Public API (`swctools.api`)
 
 ### Data Types
@@ -48,7 +79,13 @@ Runs rule-based auto-typing on a folder.
 
 Runs radii cleaning on all SWC files in a folder.
 
+#### `radii_clean_path(path, *, config_overrides=None) -> dict`
+
+Runs shared radii cleaning on either one SWC file or a folder.
+
 ### Validation
+
+Validation radii cleaning uses the same backend implementation as batch radii cleaning.
 
 #### `validation_run_text(swc_text, *, config_overrides=None, feature_overrides=None) -> ValidationReport`
 
@@ -86,17 +123,41 @@ Reassigns all nodes in a selected subtree to a new SWC type.
 
 File wrapper for subtree type reassignment with optional write.
 
+#### `morphology_smart_decimation_text(swc_text, *, config_overrides=None) -> dict`
+
+Runs graph-aware RDP simplification and returns simplified SWC bytes plus stats.
+
+Common output fields include:
+
+- `dataframe`
+- `bytes`
+- `original_node_count`
+- `new_node_count`
+- `reduction_percent`
+- `kept_node_ids`
+- `removed_node_ids`
+- `params_used`
+- `protected_counts`
+
+#### `morphology_smart_decimation_file(path, *, out_path=None, write_output=False, config_overrides=None) -> dict`
+
+File wrapper for Smart Decimation.
+
+- if `write_output=True`, writes simplified SWC
+- always writes a simplification text log
+- returns `log_path`, `input_path`, and optional `output_path`
+
 ### Atlas Registration (Placeholder)
 
 #### `register_to_atlas(path, *, atlas_name=None, config_overrides=None) -> FeatureResult`
 
 Returns a structured placeholder response (`ok=False`) until implemented.
 
-### Analysis
+### Analysis (Placeholder)
 
 #### `analysis_summary_file(path, *, config_overrides=None) -> dict`
 
-Computes basic summary metrics for one SWC file.
+Returns basic morphology summary information.
 
 ### Plugins
 
@@ -148,9 +209,11 @@ Example:
 ```python
 from swctools.plugins import register_method
 
+
 def my_auto_typing(folder, options, config):
     # custom implementation
     return ...
+
 
 register_method("batch_processing.auto_typing", "default", my_auto_typing)
 ```
@@ -165,6 +228,14 @@ Validation config:
 
 - `swctools/tools/validation/configs/default.json`
 
+Smart Decimation config:
+
+- `swctools/tools/morphology_editing/configs/simplification.json`
+
+Shared radii-clean config:
+
+- `swctools/tools/batch_processing/configs/radii_cleaning.json`
+
 Use runtime overrides with `config_overrides` (API) or `--config-json` (CLI).
 
 ## Minimal Usage Example
@@ -176,8 +247,7 @@ import swctools.api as swc
 report = swc.validation_run_file("data/example.swc")
 print(report.summary())
 
-# Batch auto-typing
-opts = swc.RuleBatchOptions(soma=True, axon=True, basal=True)
-result = swc.batch_auto_typing("data/folder", options=opts)
-print(result.files_processed, result.total_type_changes)
+# Smart decimation
+result = swc.morphology_smart_decimation_file("data/example.swc", write_output=True)
+print(result["original_node_count"], result["new_node_count"], result["log_path"])
 ```

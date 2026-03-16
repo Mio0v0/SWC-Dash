@@ -21,6 +21,7 @@ from swctools.tools.batch_processing.features.batch_validation import (
 )
 from swctools.tools.batch_processing.features.radii_cleaning import (
     clean_folder as batch_radii_cleaning,
+    clean_path as radii_clean_path,
 )
 from swctools.tools.batch_processing.features.swc_splitter import (
     split_folder as batch_split_folder,
@@ -29,7 +30,14 @@ from swctools.tools.morphology_editing.features.dendrogram_editing import (
     reassign_subtree_types,
     reassign_subtree_types_in_file,
 )
+from swctools.tools.morphology_editing.features.simplification import (
+    simplify_file as morphology_smart_decimation_file,
+    simplify_swc_text as morphology_smart_decimation_text,
+)
 from swctools.tools.validation.features.auto_fix import auto_fix_file, auto_fix_text
+from swctools.tools.validation.features.auto_typing import (
+    run_file as validation_auto_typing_file,
+)
 from swctools.tools.validation.features.run_checks import (
     validate_file as validation_run_file,
     validate_text as validation_run_text,
@@ -45,14 +53,18 @@ __all__ = [
     "batch_split_folder",
     "batch_auto_typing",
     "batch_radii_cleaning",
+    "radii_clean_path",
     "auto_fix_text",
     "auto_fix_file",
+    "validation_auto_typing_file",
     "validation_run_text",
     "validation_run_file",
     "build_mesh_from_text",
     "build_mesh_from_file",
     "reassign_subtree_types",
     "reassign_subtree_types_in_file",
+    "morphology_smart_decimation_text",
+    "morphology_smart_decimation_file",
     "register_to_atlas",
     "analysis_summary_file",
     "register_method",

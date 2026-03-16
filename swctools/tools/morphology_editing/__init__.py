@@ -1,5 +1,5 @@
 """Morphology Editing tool API."""
 
-from .features import dendrogram_editing
+from .features import dendrogram_editing, simplification
 
-__all__ = ["dendrogram_editing"]
+__all__ = ["dendrogram_editing", "simplification"]

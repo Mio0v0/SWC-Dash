@@ -211,19 +211,36 @@ def _check_no_duplicate_3d_points(ctx, params: dict[str, Any]) -> CheckResult:
     _ = params
     ids = np.asarray(ctx.ids, dtype=np.int64)
     xyz = np.ascontiguousarray(np.asarray(ctx.xyz, dtype=np.float64))
-    if xyz.shape[0] == 0:
-        dup_ids: list[int] = []
-    else:
+    dup_ids: list[int] = []
+    group_count = 0
+    sample_groups: list[dict[str, Any]] = []
+    if xyz.shape[0] > 0:
         row_view = xyz.view(np.dtype((np.void, xyz.dtype.itemsize * xyz.shape[1]))).ravel()
-        _, first_idx, inverse = np.unique(row_view, return_index=True, return_inverse=True)
-        counts = np.bincount(inverse)
-        repeated = counts[inverse] > 1
-        first_mask = np.zeros(row_view.shape[0], dtype=bool)
-        first_mask[first_idx] = True
-        dup_mask = repeated & (~first_mask)
-        dup_ids = ids[dup_mask].astype(np.int64).tolist()
-    passed = len(dup_ids) == 0
-    msg = "No duplicate 3D points." if passed else f"Found {len(dup_ids)} duplicated 3D points."
+        _, inverse, counts = np.unique(row_view, return_inverse=True, return_counts=True)
+        repeated_group_labels = np.flatnonzero(counts > 1)
+        group_count = int(repeated_group_labels.size)
+        if group_count > 0:
+            repeated_mask = counts[inverse] > 1
+            dup_ids = ids[repeated_mask].astype(np.int64).tolist()
+            for g in repeated_group_labels[:10]:
+                idx = np.flatnonzero(inverse == g)
+                grp_ids = ids[idx].astype(np.int64).tolist()
+                sample_groups.append(
+                    {
+                        "ids": grp_ids,
+                        "xyz": [
+                            float(xyz[idx[0], 0]),
+                            float(xyz[idx[0], 1]),
+                            float(xyz[idx[0], 2]),
+                        ],
+                    }
+                )
+    passed = group_count == 0
+    msg = (
+        "No duplicate 3D points."
+        if passed
+        else f"Found {len(dup_ids)} duplicate nodes across {group_count} coordinate groups."
+    )
     return CheckResult.from_pass_fail(
         key="no_duplicate_3d_points",
         label="No duplicate 3D points",
@@ -232,7 +249,11 @@ def _check_no_duplicate_3d_points(ctx, params: dict[str, Any]) -> CheckResult:
         message=msg,
         source="native",
         failing_node_ids=dup_ids,
-        metrics={"duplicate_point_count": len(dup_ids)},
+        metrics={
+            "duplicate_point_count": len(dup_ids),
+            "duplicate_group_count": group_count,
+            "duplicate_groups_sample": sample_groups,
+        },
     )
 
 

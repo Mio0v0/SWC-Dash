@@ -99,6 +99,23 @@ class RuleBatchResult:
     log_path: str | None
 
 
+@dataclass
+class RuleFileResult:
+    input_file: str
+    output_file: str | None
+    nodes_total: int
+    type_changes: int
+    radius_changes: int
+    out_type_counts: dict[int, int]
+    failures: list[str]
+    change_details: list[str]
+    log_path: str | None
+    headers: list[str]
+    rows: list[dict[str, Any]]
+    types: list[int]
+    radii: list[float]
+
+
 def _parse_swc(path: Path) -> tuple[list[str], list[dict[str, Any]]]:
     headers: list[str] = []
     rows: list[dict[str, Any]] = []
@@ -629,6 +646,125 @@ def _write_swc(path: Path, headers: list[str], rows: list[dict[str, Any]], types
             )
 
 
+def _build_change_details(
+    file_name: str,
+    rows: list[dict[str, Any]],
+    orig_types: list[int],
+    new_types: list[int],
+    orig_radii: list[float],
+    new_radii: list[float],
+) -> list[str]:
+    out: list[str] = []
+    type_changes = sum(1 for old, new in zip(orig_types, new_types) if int(old) != int(new))
+    radius_changes = sum(1 for old, new in zip(orig_radii, new_radii) if float(old) != float(new))
+    if type_changes <= 0 and radius_changes <= 0:
+        return out
+
+    out.append(f"[{file_name}]")
+    if type_changes > 0:
+        out.append("type_changes:")
+        for row, old_t, new_t in zip(rows, orig_types, new_types):
+            if int(old_t) != int(new_t):
+                out.append(
+                    f"  node_id={int(row['id'])}: old_type={int(old_t)} -> new_type={int(new_t)}"
+                )
+    if radius_changes > 0:
+        out.append("radius_changes:")
+        for row, old_r, new_r in zip(rows, orig_radii, new_radii):
+            if float(old_r) != float(new_r):
+                out.append(
+                    f"  node_id={int(row['id'])}: "
+                    f"old_radius={float(old_r):.10g} -> new_radius={float(new_r):.10g}"
+                )
+    out.append("")
+    return out
+
+
+def run_rule_file(
+    file_path: str,
+    opts: RuleBatchOptions,
+    *,
+    output_path: str | None = None,
+    write_output: bool = True,
+    write_log: bool = True,
+) -> RuleFileResult:
+    in_path = Path(file_path)
+    headers, rows = _parse_swc(in_path)
+    if not rows:
+        raise ValueError(f"{in_path.name}: no valid SWC rows")
+
+    orig_types = [int(r["type"]) for r in rows]
+    orig_radii = [float(r["radius"]) for r in rows]
+    types, radii, type_changes, radius_changes = _apply_rules(rows, opts)
+
+    out_path: Path | None = None
+    if write_output:
+        out_path = (
+            Path(output_path)
+            if output_path
+            else in_path.with_name(f"{in_path.stem}_auto_typed{in_path.suffix}")
+        )
+        _write_swc(out_path, headers, rows, types, radii)
+
+    out_counts = {
+        1: sum(1 for t in types if int(t) == 1),
+        2: sum(1 for t in types if int(t) == 2),
+        3: sum(1 for t in types if int(t) == 3),
+        4: sum(1 for t in types if int(t) == 4),
+    }
+    change_details = _build_change_details(
+        in_path.name,
+        rows,
+        orig_types,
+        types,
+        orig_radii,
+        radii,
+    )
+
+    log_path: str | None = None
+    if write_log:
+        log_target = (
+            out_path.with_name(f"{out_path.stem}_auto_typing_report.txt")
+            if out_path is not None
+            else in_path.with_name(f"{in_path.stem}_auto_typing_report.txt")
+        )
+        payload = {
+            "folder": str(in_path.parent),
+            "out_dir": str(out_path.parent if out_path is not None else in_path.parent),
+            "zip_path": None,
+            "files_total": 1,
+            "files_processed": 1,
+            "files_failed": 0,
+            "total_nodes": len(rows),
+            "total_type_changes": type_changes,
+            "total_radius_changes": radius_changes,
+            "failures": [],
+            "per_file": [
+                f"{in_path.name}: nodes={len(rows)}, type_changes={type_changes}, "
+                f"radius_changes={radius_changes}, out_types(soma/axon/basal/apic)="
+                f"{out_counts[1]}/{out_counts[2]}/{out_counts[3]}/{out_counts[4]}"
+            ],
+            "change_details": change_details,
+        }
+        log_path = write_text_report(log_target, format_auto_typing_report_text(payload))
+
+    return RuleFileResult(
+        input_file=str(in_path),
+        output_file=str(out_path) if out_path is not None else None,
+        nodes_total=len(rows),
+        type_changes=type_changes,
+        radius_changes=radius_changes,
+        out_type_counts=out_counts,
+        failures=[],
+        change_details=change_details,
+        log_path=log_path,
+        headers=headers,
+        rows=rows,
+        types=types,
+        radii=radii,
+    )
+
+
 def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
     in_dir = Path(folder)
     swc_files = sorted([p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() == ".swc"])
@@ -674,24 +810,16 @@ def run_rule_batch(folder: str, opts: RuleBatchOptions) -> RuleBatchResult:
                 f"{out_counts[1]}/{out_counts[2]}/{out_counts[3]}/{out_counts[4]}"
             )
 
-            if type_changes > 0 or radius_changes > 0:
-                change_details.append(f"[{swc_path.name}]")
-            if type_changes > 0:
-                change_details.append("type_changes:")
-                for row, old_t, new_t in zip(rows, orig_types, types):
-                    if int(old_t) != int(new_t):
-                        change_details.append(
-                            f"  node_id={int(row['id'])}: old_type={int(old_t)} -> new_type={int(new_t)}"
-                        )
-            if radius_changes > 0:
-                change_details.append("radius_changes:")
-                for row, old_r, new_r in zip(rows, orig_radii, radii):
-                    if float(old_r) != float(new_r):
-                        change_details.append(
-                            f"  node_id={int(row['id'])}: old_radius={float(old_r):.10g} -> new_radius={float(new_r):.10g}"
-                        )
-            if type_changes > 0 or radius_changes > 0:
-                change_details.append("")
+            change_details.extend(
+                _build_change_details(
+                    swc_path.name,
+                    rows,
+                    orig_types,
+                    types,
+                    orig_radii,
+                    radii,
+                )
+            )
         except Exception as e:
             failures.append(f"{swc_path.name}: {e}")
 

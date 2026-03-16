@@ -22,15 +22,29 @@ swctools <tool> <feature> [arguments] [options]
 
 Use the full `swctools ...` command. Do not run `batch ...` by itself.
 
-Current tools:
+## Tool -> Feature Map (Current Structure)
 
 - `batch`
+  - `validate`
+  - `split`
+  - `auto-typing`
+  - `radii-clean`
 - `validation`
+  - `rule-guide`
+  - `run`
+  - `auto-fix`
+  - `radii-clean`
 - `visualization`
+  - `mesh-editing`
 - `morphology`
+  - `dendrogram-edit`
+  - `smart-decimation`
 - `atlas`
+  - `register` (placeholder)
 - `analysis`
+  - `summary` (placeholder)
 - `plugins`
+  - `list`
 
 ## Common Option: `--config-json`
 
@@ -42,22 +56,27 @@ swctools validation run file.swc --config-json '{"checks":{"no_back_tracking":{"
 
 The value must be a JSON object.
 
+Shared radii-clean config file:
+
+- `swctools/tools/batch_processing/configs/radii_cleaning.json`
+
 ## Commands
 
 ### Batch Processing
 
 #### `swctools batch validate <folder> [--config-json JSON]`
 
-Runs batch validation over all SWC files in a folder using the same rule set as `validation run`.
+Runs batch validation over all SWC files in a folder using the same checks as `validation run`.
 
 Special alias:
 
-- `swctools batch validate rule-guide` prints only the validation Rule Guide (no batch run).
+- `swctools batch validate rule-guide` prints only the validation Rule Guide (no file run).
 
-CLI prints for normal batch run:
+Output:
 
-- pre-check summary (same rule text as Validation)
-- per-file validation summaries/details
+- pre-check summary (rule guide)
+- per-file validation results
+- batch summary + report file path
 
 #### `swctools batch split <folder> [--config-json JSON]`
 
@@ -72,10 +91,7 @@ Default output layout:
 
 Rule-based auto-typing over a folder.
 
-Before processing, CLI prints an `Auto Typing Rule Guide` section that explains:
-
-- how the auto-typing pipeline works
-- the active decision boundaries/thresholds
+Before processing, CLI prints an `Auto Typing Rule Guide` section.
 
 Flags:
 
@@ -88,31 +104,37 @@ Flags:
 
 If no flags are provided, defaults come from `auto_typing.json`.
 
-#### `swctools batch radii-clean <folder> [--config-json JSON]`
+#### `swctools batch radii-clean <file_or_folder> [--config-json JSON]`
 
-Cleans invalid radii in folder SWCs.
+Runs radii cleaning on one SWC file or all SWCs in a folder.
+
+Behavior:
+
+- detects non-positive/non-finite radii
+- detects local spikes/dips vs parent+children neighborhood
+- replaces abnormal radii with local mean(parent + children)
+- writes a text log report
 
 ### Validation
 
 #### `swctools validation rule-guide [--config-json JSON]`
 
-Prints only the validation Rule Guide (enabled checks + rule text), without running checks on a file.
+Prints only the validation Rule Guide (no file run).
 
 #### `swctools validation run <file.swc> [--config-json JSON]`
 
-Runs structured validation checks and prints:
-
-- result summary
-- detailed findings for warning/fail checks
+Runs structured validation checks and prints summary + details.
 
 #### `swctools validation auto-fix <file.swc> [--write] [--out PATH] [--config-json JSON]`
 
-Runs auto-fix plus structured validation report.
+Runs auto-fix plus validation report.
 
 - `--write`: writes sanitized SWC
-- `--out`: optional output file path
+- `--out`: optional output path
 
-Without `--write`, data is returned/printed but not saved.
+#### `swctools validation radii-clean <file_or_folder> [--config-json JSON]`
+
+Runs the same shared radii-clean backend as `batch radii-clean`.
 
 ### Visualization
 
@@ -131,17 +153,32 @@ Reassigns a subtree node type.
 - `--write`: write updated file
 - `--out`: optional output file path
 
+#### `swctools morphology smart-decimation <file.swc> [--write] [--out PATH] [--config-json JSON]`
+
+Runs RDP-based Smart Decimation with graph-aware node protection.
+
+Protected node rules include:
+
+- root/soma nodes
+- optional tips and bifurcations (config flags)
+- radius-sensitive nodes that exceed configured tolerance
+
+- `--write`: write simplified SWC
+- `--out`: optional output file path
+
+Output includes node-count reduction and a simplification log file path.
+
 ### Atlas Registration (Placeholder)
 
 #### `swctools atlas register <file.swc> [--atlas NAME] [--config-json JSON]`
 
-Placeholder command. Returns a structured "not implemented" result.
+Placeholder command (structured response, not implemented).
 
-### Analysis
+### Analysis (Placeholder)
 
 #### `swctools analysis summary <file.swc> [--config-json JSON]`
 
-Computes basic morphology summary metrics.
+Placeholder/basic summary command.
 
 ### Plugin Inspection
 
@@ -152,7 +189,7 @@ Lists builtin and plugin method names currently registered.
 ## Exit Codes
 
 - `0`: success
-- `1`: invalid command usage / help displayed
+- `1`: invalid usage / help shown
 - `2`: runtime error
 
 ## Examples
@@ -161,10 +198,17 @@ Lists builtin and plugin method names currently registered.
 swctools batch validate rule-guide
 swctools batch split /path/to/folder
 swctools batch auto-typing /path/to/folder --soma --axon --basal
+swctools batch radii-clean /path/to/file_or_folder
+
 swctools validation rule-guide
 swctools validation run /path/to/file.swc
 swctools validation auto-fix /path/to/file.swc --write
+swctools validation radii-clean /path/to/file_or_folder
+
 swctools visualization mesh-editing /path/to/file.swc --include-edges
+
 swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write
+swctools morphology smart-decimation /path/to/file.swc --write
+
 swctools plugins list
 ```
