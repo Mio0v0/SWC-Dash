@@ -98,7 +98,39 @@ Notes:
   - `Apply` saves a new SWC and replaces the active working buffer.
   - `Redo` recomputes simplification.
   - `Cancel` discards temporary simplified data.
+  - `Open JSON` opens an in-app JSON editor popup for `simplification.json` 
 - Multiple SWC files can be opened as separate canvas tabs.
+
+## Smart Decimation Algorithm
+
+Smart Decimation (`morphology_editing.simplification`) is graph-aware RDP simplification:
+
+1. Build a directed SWC tree graph from `id`/`parent`.
+2. Protect structural nodes:
+   - roots (`parent = -1`)
+   - tips (if `keep_tips = true`)
+   - bifurcations (if `keep_bifurcations = true`)
+3. Split morphology into anchor-to-anchor linear paths.
+4. Run Ramer-Douglas-Peucker (RDP) on interior path points using `epsilon`.
+5. Protect radius-sensitive interior nodes whose radius deviates too much from path mean
+   using `radius_tolerance`.
+6. Rebuild a valid SWC by reconnecting each kept node to the nearest kept ancestor.
+
+Main parameters in `swctools/tools/morphology_editing/configs/simplification.json`:
+
+- `thresholds.epsilon`
+  - geometric tolerance for RDP
+  - higher value keeps fewer nodes (stronger simplification)
+  - lower value keeps more detail
+- `thresholds.radius_tolerance`
+  - relative radius deviation threshold from path mean
+  - protects points with unusual radius when exceeded
+- `flags.keep_tips`
+  - protect all terminal nodes
+- `flags.keep_bifurcations`
+  - protect all branch points
+- `flags.keep_roots`
+  - protect root/soma roots
 
 ## Logs and Reports
 

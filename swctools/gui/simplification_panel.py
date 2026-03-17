@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
@@ -19,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from swctools.core.config import feature_config_path, load_feature_config
+from swctools.core.config import feature_config_path, load_feature_config, save_feature_config
 
 _DEFAULT_CFG: dict[str, Any] = {
     "thresholds": {
@@ -46,6 +45,7 @@ class SimplificationPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._cfg_path = feature_config_path("morphology_editing", "simplification")
+        self._cfg_dialog: _SimplificationConfigDialog | None = None
         self._build_ui()
         self._load_from_json()
         self.set_preview_state(False, None, None)
@@ -137,11 +137,14 @@ class SimplificationPanel(QWidget):
         root.addWidget(self._summary, stretch=1)
 
     def _open_json(self):
-        p = Path(self._cfg_path)
-        if not p.exists():
-            self.log_message.emit(f"Simplification config not found: {p}")
-            return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+        if self._cfg_dialog is None:
+            self._cfg_dialog = _SimplificationConfigDialog(self)
+            self._cfg_dialog.saved.connect(self.log_message.emit)
+            self._cfg_dialog.saved.connect(lambda _msg: self._load_from_json())
+        self._cfg_dialog.reload_from_source()
+        self._cfg_dialog.show()
+        self._cfg_dialog.raise_()
+        self._cfg_dialog.activateWindow()
 
     def _load_from_json(self):
         cfg = load_feature_config("morphology_editing", "simplification", default=_DEFAULT_CFG)
@@ -217,3 +220,73 @@ class SimplificationPanel(QWidget):
             },
         }
         return json.dumps(data, indent=2, sort_keys=True)
+
+
+class _SimplificationConfigDialog(QDialog):
+    saved = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Simplification JSON")
+        self.resize(820, 620)
+        self._tool = "morphology_editing"
+        self._feature = "simplification"
+        self._cfg_path = feature_config_path(self._tool, self._feature)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        path_label = QLabel(f"Config file: {self._cfg_path}")
+        path_label.setWordWrap(True)
+        path_label.setStyleSheet("font-size: 12px; color: #555;")
+        root.addWidget(path_label)
+
+        self._editor = QPlainTextEdit()
+        self._editor.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #fafafa; border: 1px solid #ddd; color: #333;"
+            "  font-family: Menlo, Consolas, monospace; font-size: 12px;"
+            "}"
+        )
+        root.addWidget(self._editor, stretch=1)
+
+        btn_row = QHBoxLayout()
+        btn_reload = QPushButton("Reload")
+        btn_reload.clicked.connect(self.reload_from_source)
+        btn_row.addWidget(btn_reload)
+
+        btn_save = QPushButton("Save")
+        btn_save.clicked.connect(self._on_save)
+        btn_row.addWidget(btn_save)
+
+        btn_row.addStretch()
+        self._status = QLabel("")
+        self._status.setStyleSheet("font-size: 12px; color: #555;")
+        btn_row.addWidget(self._status)
+
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.close)
+        btn_row.addWidget(btn_close)
+        root.addLayout(btn_row)
+
+        self.reload_from_source()
+
+    def reload_from_source(self):
+        try:
+            cfg = load_feature_config(self._tool, self._feature, default=_DEFAULT_CFG)
+            self._editor.setPlainText(json.dumps(cfg, indent=2, sort_keys=True))
+            self._status.setText("Loaded.")
+        except Exception as e:  # noqa: BLE001
+            self._status.setText(f"Load failed: {e}")
+
+    def _on_save(self):
+        try:
+            payload = json.loads(self._editor.toPlainText())
+            if not isinstance(payload, dict):
+                raise ValueError("JSON root must be an object")
+            save_feature_config(self._tool, self._feature, payload)
+            self._status.setText("Saved.")
+            self.saved.emit("Simplification JSON saved.")
+        except Exception as e:  # noqa: BLE001
+            self._status.setText(f"Save failed: {e}")

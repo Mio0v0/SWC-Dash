@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections import deque
 from typing import Any
 
@@ -10,10 +11,19 @@ import numpy as np
 import pandas as pd
 
 TYPE_NAMES = {
+    0: "undefined",
     1: "soma",
     2: "axon",
-    3: "basal",
-    4: "apical",
+    3: "basal dendrite",
+    4: "apical dendrite",
+}
+
+TYPE_ALIASES: dict[int, set[str]] = {
+    0: {"0", "undefined", "unknown"},
+    1: {"1", "soma"},
+    2: {"2", "axon"},
+    3: {"3", "basal", "basal dendrite", "dendrite", "basal_dendrite"},
+    4: {"4", "apical", "apical dendrite", "apical_dendrite"},
 }
 
 DEFAULT_RULES: dict[str, Any] = {
@@ -72,6 +82,48 @@ def _deep_merge(base: dict[str, Any], overrides: dict[str, Any] | None) -> dict[
             out[k] = _deep_merge(dict(out[k]), v)
         else:
             out[k] = v
+    return out
+
+
+def _norm_type_text(v: Any) -> str:
+    txt = str(v or "").strip().lower()
+    txt = txt.replace("_", " ")
+    txt = re.sub(r"\s+", " ", txt)
+    return txt
+
+
+def _resolve_type_id(v: Any) -> int | None:
+    if isinstance(v, (int, np.integer)):
+        return int(v)
+    txt = _norm_type_text(v)
+    if not txt:
+        return None
+    if txt.lstrip("-").isdigit():
+        return int(txt)
+    m = re.search(r"\(([-]?\d+)\)\s*$", txt)
+    if m:
+        return int(m.group(1))
+    for tid, aliases in TYPE_ALIASES.items():
+        if txt in aliases:
+            return int(tid)
+    return None
+
+
+def _resolve_type_thresholds(cfg: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    raw = cfg.get("type_thresholds", {})
+    if not isinstance(raw, dict):
+        return {}
+
+    out: dict[int, dict[str, Any]] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        tid = _resolve_type_id(key)
+        if tid is None and "type_id" in value:
+            tid = _resolve_type_id(value.get("type_id"))
+        if tid is None:
+            continue
+        out[int(tid)] = dict(value)
     return out
 
 
@@ -173,12 +225,14 @@ def _bounds_for_type(
     t: int,
     cfg: dict[str, Any],
     stats_map: dict[str, Any],
+    per_type_cfg: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[bool, float, float]:
     preserve_soma = bool(cfg.get("preserve_soma", True))
     if preserve_soma and int(t) == 1:
         return False, 0.0, float("inf")
 
-    per_type = dict(cfg.get("type_thresholds", {})).get(str(int(t)), {})
+    resolved = dict(per_type_cfg or _resolve_type_thresholds(cfg))
+    per_type = dict(resolved.get(int(t), {}))
     enabled = bool(per_type.get("enabled", True))
     if not enabled:
         return False, 0.0, float("inf")
@@ -288,12 +342,12 @@ def clean_radii_dataframe(df: pd.DataFrame, *, rules: dict[str, Any] | None = No
     mode = str(cfg.get("threshold_mode", "percentile")).strip().lower()
     zero_only_small = bool(cfg.get("small_radius_zero_only", True))
     preserve_soma = bool(cfg.get("preserve_soma", True))
-    per_type_cfg = dict(cfg.get("type_thresholds", {}))
+    per_type_cfg = _resolve_type_thresholds(cfg)
     bounds: dict[int, tuple[bool, float, float]] = {}
     for t in sorted({int(v) for v in types.tolist()}):
-        enabled, lo, hi = _bounds_for_type(int(t), cfg, stats_map)
+        enabled, lo, hi = _bounds_for_type(int(t), cfg, stats_map, per_type_cfg=per_type_cfg)
         if mode != "absolute":
-            t_cfg = dict(per_type_cfg.get(str(int(t)), {}))
+            t_cfg = dict(per_type_cfg.get(int(t), {}))
             lp = float(t_cfg.get("min_percentile", g_pct.get("min", 1.0)))
             hp = float(t_cfg.get("max_percentile", g_pct.get("max", 99.5)))
             vals = radii[(types == int(t)) & np.isfinite(radii) & (radii > 0.0)]

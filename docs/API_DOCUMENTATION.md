@@ -127,6 +127,23 @@ File wrapper for subtree type reassignment with optional write.
 
 Runs graph-aware RDP simplification and returns simplified SWC bytes plus stats.
 
+How the backend works:
+
+1. Build directed morphology graph from SWC topology.
+2. Protect structural nodes (roots, optional tips, optional bifurcations).
+3. Extract anchor-to-anchor linear paths.
+4. Apply RDP with `thresholds.epsilon`.
+5. Protect radius-sensitive nodes using `thresholds.radius_tolerance`.
+6. Rewire parent links to nearest kept ancestors for a valid simplified tree.
+
+Important config parameters:
+
+- `thresholds.epsilon`: higher means stronger simplification.
+- `thresholds.radius_tolerance`: lower means stricter radius-preservation.
+- `flags.keep_tips`: keep terminal points.
+- `flags.keep_bifurcations`: keep branch points.
+- `flags.keep_roots`: keep root points.
+
 Common output fields include:
 
 - `dataframe`

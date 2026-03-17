@@ -168,6 +168,22 @@ Protected node rules include:
 
 Output includes node-count reduction and a simplification log file path.
 
+Algorithm summary:
+
+1. Build SWC graph from node `id` and `parent`.
+2. Create anchor paths between protected structural nodes.
+3. Run RDP on each path interior with `epsilon`.
+4. Protect radius-sensitive nodes with deviation above `radius_tolerance`.
+5. Reconnect kept nodes to nearest kept ancestors and output simplified SWC.
+
+Parameter meaning (from `simplification.json`):
+
+- `thresholds.epsilon`: geometric simplification tolerance.
+- `thresholds.radius_tolerance`: relative radius-deviation protection threshold.
+- `flags.keep_tips`: preserve terminal nodes.
+- `flags.keep_bifurcations`: preserve branch points.
+- `flags.keep_roots`: preserve root nodes.
+
 ### Atlas Registration (Placeholder)
 
 #### `swctools atlas register <file.swc> [--atlas NAME] [--config-json JSON]`
