@@ -13,6 +13,7 @@ from pathlib import Path
 
 from swctools.core.auto_typing import RuleBatchOptions
 from swctools.core.auto_typing_catalog import format_auto_typing_guide_text
+from swctools.core.config import merge_config
 from swctools.plugins.registry import list_all_feature_methods, list_feature_methods
 from swctools.tools.analysis.features.summary import analyze_file
 from swctools.tools.atlas_registration.features.registration import register_to_atlas
@@ -23,7 +24,10 @@ from swctools.tools.batch_processing.features.swc_splitter import split_folder
 from swctools.tools.morphology_editing.features.dendrogram_editing import (
     reassign_subtree_types_in_file,
 )
-from swctools.tools.morphology_editing.features.simplification import simplify_file as simplify_morphology_file
+from swctools.tools.morphology_editing.features.simplification import (
+    get_config as get_simplification_config,
+    simplify_file as simplify_morphology_file,
+)
 
 from swctools.tools.validation.features.auto_fix import auto_fix_file
 from swctools.tools.validation.features.radii_cleaning import clean_path as validation_clean_radii_path
@@ -170,6 +174,39 @@ def _print_validation_results(report: dict) -> None:
 def _print_auto_typing_guide() -> None:
     print(format_auto_typing_guide_text())
     print("")
+
+
+def _print_simplification_rule_guide(cfg: dict | None = None) -> None:
+    cfg0 = dict(cfg or {})
+    thr = dict(cfg0.get("thresholds", {}))
+    flags = dict(cfg0.get("flags", {}))
+    eps = float(thr.get("epsilon", 2.0))
+    radius_tol = float(thr.get("radius_tolerance", 0.5))
+    keep_tips = bool(flags.get("keep_tips", True))
+    keep_bifs = bool(flags.get("keep_bifurcations", True))
+    keep_roots = bool(flags.get("keep_roots", True))
+    lines = [
+        "Smart Decimation Rule Guide",
+        "---------------------------",
+        "1) Build directed SWC graph from id/parent.",
+        "2) Protect structural nodes (roots + optional tips + optional bifurcations).",
+        "3) Split into anchor-to-anchor linear paths.",
+        "4) Run RDP on each path interior using epsilon.",
+        "5) Protect radius-sensitive nodes when deviation exceeds radius_tolerance.",
+        "6) Rewire kept nodes to nearest kept ancestor.",
+        "",
+        "Radius-sensitive rule:",
+        "  abs(node_radius - path_mean_radius) / path_mean_radius > radius_tolerance",
+        "",
+        "Parameters used for this run:",
+        f"- epsilon: {eps}",
+        f"- radius_tolerance: {radius_tol}",
+        f"- keep_tips: {keep_tips}",
+        f"- keep_bifurcations: {keep_bifs}",
+        f"- keep_roots: {keep_roots}",
+        "",
+    ]
+    print("\n".join(lines))
 
 
 def _print_batch_validation_results(batch_report: dict) -> None:
@@ -516,11 +553,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.tool == "morphology" and args.feature == "smart-decimation":
+            cfg_overrides = _parse_config_overrides(args.config_json)
+            cfg_effective = merge_config(get_simplification_config(), cfg_overrides or {})
+            _print_simplification_rule_guide(cfg_effective)
             out = simplify_morphology_file(
                 str(args.file),
                 out_path=(args.out or None),
                 write_output=bool(args.write),
-                config_overrides=_parse_config_overrides(args.config_json),
+                config_overrides=cfg_overrides,
             )
             out_print = {
                 k: v

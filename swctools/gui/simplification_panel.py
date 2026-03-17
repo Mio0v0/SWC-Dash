@@ -46,6 +46,7 @@ class SimplificationPanel(QWidget):
         super().__init__(parent)
         self._cfg_path = feature_config_path("morphology_editing", "simplification")
         self._cfg_dialog: _SimplificationConfigDialog | None = None
+        self._guide_dialog: _SimplificationRuleGuideDialog | None = None
         self._build_ui()
         self._load_from_json()
         self.set_preview_state(False, None, None)
@@ -77,6 +78,10 @@ class SimplificationPanel(QWidget):
         self._btn_open_json = QPushButton("Open JSON")
         self._btn_open_json.clicked.connect(self._open_json)
         cfg_row.addWidget(self._btn_open_json)
+
+        self._btn_rule_guide = QPushButton("Rule Guide")
+        self._btn_rule_guide.clicked.connect(self._open_rule_guide)
+        cfg_row.addWidget(self._btn_rule_guide)
         cfg_row.addStretch()
         root.addLayout(cfg_row)
 
@@ -145,6 +150,14 @@ class SimplificationPanel(QWidget):
         self._cfg_dialog.show()
         self._cfg_dialog.raise_()
         self._cfg_dialog.activateWindow()
+
+    def _open_rule_guide(self):
+        if self._guide_dialog is None:
+            self._guide_dialog = _SimplificationRuleGuideDialog(self)
+        self._guide_dialog.refresh(self.current_overrides())
+        self._guide_dialog.show()
+        self._guide_dialog.raise_()
+        self._guide_dialog.activateWindow()
 
     def _load_from_json(self):
         cfg = load_feature_config("morphology_editing", "simplification", default=_DEFAULT_CFG)
@@ -290,3 +303,77 @@ class _SimplificationConfigDialog(QDialog):
             self.saved.emit("Simplification JSON saved.")
         except Exception as e:  # noqa: BLE001
             self._status.setText(f"Save failed: {e}")
+
+
+class _SimplificationRuleGuideDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Smart Decimation Rule Guide")
+        self.resize(820, 580)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        title = QLabel("Smart Decimation (RDP) - Rule Guide")
+        title.setStyleSheet("font-size: 14px; font-weight: 600; color: #222;")
+        root.addWidget(title)
+
+        self._body = QPlainTextEdit()
+        self._body.setReadOnly(True)
+        self._body.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #fafafa; border: 1px solid #ddd; color: #333;"
+            "  font-family: Menlo, Consolas, monospace; font-size: 12px;"
+            "}"
+        )
+        root.addWidget(self._body, stretch=1)
+
+        row = QHBoxLayout()
+        row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        row.addWidget(close_btn)
+        root.addLayout(row)
+
+    def refresh(self, overrides: dict[str, Any] | None = None):
+        cfg = dict(overrides or {})
+        thr = dict(cfg.get("thresholds", {}))
+        flags = dict(cfg.get("flags", {}))
+        eps = float(thr.get("epsilon", _DEFAULT_CFG["thresholds"]["epsilon"]))
+        rt = float(thr.get("radius_tolerance", _DEFAULT_CFG["thresholds"]["radius_tolerance"]))
+        keep_tips = bool(flags.get("keep_tips", _DEFAULT_CFG["flags"]["keep_tips"]))
+        keep_bifs = bool(flags.get("keep_bifurcations", _DEFAULT_CFG["flags"]["keep_bifurcations"]))
+        keep_roots = bool(flags.get("keep_roots", _DEFAULT_CFG["flags"]["keep_roots"]))
+
+        lines = [
+            "Algorithm",
+            "---------",
+            "1) Build directed SWC graph from id/parent.",
+            "2) Protect structural nodes (roots, optional tips, optional bifurcations).",
+            "3) Split into anchor-to-anchor linear paths.",
+            "4) Run RDP on each path interior using epsilon.",
+            "5) Protect radius-sensitive nodes when deviation exceeds radius_tolerance.",
+            "6) Rewire kept nodes to nearest kept ancestor to keep tree valid.",
+            "",
+            "Radius Rule",
+            "-----------",
+            "A node is radius-sensitive when:",
+            "  abs(node_radius - path_mean_radius) / path_mean_radius > radius_tolerance",
+            "",
+            "Current Parameters",
+            "------------------",
+            f"- epsilon: {eps}",
+            f"- radius_tolerance: {rt}",
+            f"- keep_tips: {keep_tips}",
+            f"- keep_bifurcations: {keep_bifs}",
+            f"- keep_roots: {keep_roots}",
+            "",
+            "Tuning",
+            "------",
+            "- Increase epsilon to remove more points.",
+            "- Decrease epsilon to keep more geometric detail.",
+            "- Decrease radius_tolerance to preserve more radius outliers.",
+            "- Increase radius_tolerance to allow stronger simplification.",
+        ]
+        self._body.setPlainText("\n".join(lines))
