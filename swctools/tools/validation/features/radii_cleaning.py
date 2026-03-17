@@ -28,7 +28,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 def _builtin_shared_clean(path: str, config: dict[str, Any]) -> dict[str, Any]:
-    cfg_overrides = dict(config.get("config_overrides", {}))
+    cfg_overrides: dict[str, Any] = {}
+    nested = config.get("config_overrides", {})
+    if isinstance(nested, dict):
+        cfg_overrides.update(nested)
+    # Pass through direct shared cleaner keys so CLI/GUI overrides work the
+    # same for validation and batch.
+    for k, v in dict(config).items():
+        if k in {"enabled", "method", "config_overrides"}:
+            continue
+        cfg_overrides[k] = v
     return shared_clean_path(path, config_overrides=cfg_overrides)
 
 

@@ -134,6 +134,11 @@ class BatchTabWidget(QWidget):
     def validation_tab_widget(self) -> QWidget:
         return self._validation_page
 
+    def set_loaded_swc(self, df, filename: str, file_path: str = ""):
+        page = self._radii_page
+        if hasattr(page, "set_loaded_swc"):
+            page.set_loaded_swc(df, filename, file_path)
+
     # --------------------------------------------------------- UI builders
     def _build_split_page(self) -> QWidget:
         page = QWidget()

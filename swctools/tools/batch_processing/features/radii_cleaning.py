@@ -27,16 +27,31 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "method": "default",
     "rules": {
+        "preserve_soma": True,
+        "small_radius_zero_only": True,
+        "threshold_mode": "percentile",
+        "global_percentile_bounds": {
+            "min": 1.0,
+            "max": 99.5,
+        },
+        "global_absolute_bounds": {
+            "min": 0.05,
+            "max": 30.0,
+        },
+        "type_thresholds": {
+            "2": {"enabled": True, "min_percentile": 1.0, "max_percentile": 99.5, "min_abs": 0.05, "max_abs": 30.0},
+            "3": {"enabled": True, "min_percentile": 1.0, "max_percentile": 99.5, "min_abs": 0.05, "max_abs": 30.0},
+            "4": {"enabled": True, "min_percentile": 1.0, "max_percentile": 99.5, "min_abs": 0.05, "max_abs": 30.0},
+        },
         "replace_non_positive": True,
         "replace_non_finite": True,
         "detect_spikes": True,
         "detect_dips": True,
-        "spike_ratio_threshold": 3.0,
-        "dip_ratio_threshold": 0.33,
-        "abs_min_radius": 0.05,
-        "abs_max_radius": 30.0,
+        "spike_ratio_threshold": 2.8,
+        "dip_ratio_threshold": 0.35,
         "min_neighbor_count": 1,
-        "iterations": 2,
+        "iterations": 4,
+        "max_descendant_search_depth": 32,
         "replacement": {
             "clamp_min": 0.05,
             "clamp_max": 30.0,
@@ -104,6 +119,9 @@ def clean_swc_text(swc_text: str, *, config_overrides: dict | None = None) -> di
     fn = resolve_method(FEATURE_KEY, method)
     method_out = fn(df, cfg)
     out_df, changes, details = _normalize_method_output(method_out, df)
+    stats_by_type = {}
+    if isinstance(method_out, dict):
+        stats_by_type = dict(method_out.get("stats_by_type", {}))
 
     out_bytes = write_swc_to_bytes_preserve_tokens(out_df)
     return {
@@ -111,6 +129,7 @@ def clean_swc_text(swc_text: str, *, config_overrides: dict | None = None) -> di
         "change_details": details,
         "bytes": out_bytes,
         "dataframe": out_df,
+        "stats_by_type": stats_by_type,
         "config_used": cfg,
     }
 

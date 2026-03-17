@@ -59,6 +59,50 @@ def _parse_config_overrides(raw: str) -> dict | None:
     return data
 
 
+def _apply_radii_cli_overrides(args, base: dict | None) -> dict | None:
+    out = dict(base or {})
+    rules = dict(out.get("rules", {}))
+    changed = False
+
+    mode = str(getattr(args, "threshold_mode", "") or "").strip().lower()
+    if mode in {"percentile", "absolute"}:
+        rules["threshold_mode"] = mode
+        changed = True
+
+    if bool(getattr(args, "fix_soma_radii", False)):
+        rules["preserve_soma"] = False
+        changed = True
+    if bool(getattr(args, "preserve_soma_radii", False)):
+        rules["preserve_soma"] = True
+        changed = True
+
+    pct_min = getattr(args, "percentile_min", None)
+    pct_max = getattr(args, "percentile_max", None)
+    if pct_min is not None or pct_max is not None:
+        g = dict(rules.get("global_percentile_bounds", {}))
+        if pct_min is not None:
+            g["min"] = float(pct_min)
+        if pct_max is not None:
+            g["max"] = float(pct_max)
+        rules["global_percentile_bounds"] = g
+        changed = True
+
+    abs_min = getattr(args, "abs_min", None)
+    abs_max = getattr(args, "abs_max", None)
+    if abs_min is not None or abs_max is not None:
+        g = dict(rules.get("global_absolute_bounds", {}))
+        if abs_min is not None:
+            g["min"] = float(abs_min)
+        if abs_max is not None:
+            g["max"] = float(abs_max)
+        rules["global_absolute_bounds"] = g
+        changed = True
+
+    if changed:
+        out["rules"] = rules
+    return out if out else None
+
+
 def _print_validation_precheck(report: dict) -> None:
     print("Pre-check Summary")
     print("-----------------")
@@ -197,6 +241,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     batch_radii = batch_sub.add_parser("radii-clean", help="Radii cleaning on a file or folder")
     batch_radii.add_argument("target", type=Path)
+    batch_radii.add_argument(
+        "--threshold-mode",
+        choices=["percentile", "absolute"],
+        default="",
+        help="Override threshold mode for this run.",
+    )
+    soma_group_b = batch_radii.add_mutually_exclusive_group()
+    soma_group_b.add_argument(
+        "--fix-soma-radii",
+        action="store_true",
+        default=False,
+        help="Allow soma (type 1) radii to be modified during cleaning.",
+    )
+    soma_group_b.add_argument(
+        "--preserve-soma-radii",
+        action="store_true",
+        default=False,
+        help="Keep soma (type 1) radii unchanged during cleaning.",
+    )
+    batch_radii.add_argument("--percentile-min", type=float, default=None, help="Global min percentile.")
+    batch_radii.add_argument("--percentile-max", type=float, default=None, help="Global max percentile.")
+    batch_radii.add_argument("--abs-min", type=float, default=None, help="Global min absolute radius.")
+    batch_radii.add_argument("--abs-max", type=float, default=None, help="Global max absolute radius.")
     _feature_json_arg(batch_radii)
 
     # ------------------------------ validation
@@ -218,6 +285,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     val_radii = val_sub.add_parser("radii-clean", help="Radii cleaning on a file or folder")
     val_radii.add_argument("target", type=Path)
+    val_radii.add_argument(
+        "--threshold-mode",
+        choices=["percentile", "absolute"],
+        default="",
+        help="Override threshold mode for this run.",
+    )
+    soma_group_v = val_radii.add_mutually_exclusive_group()
+    soma_group_v.add_argument(
+        "--fix-soma-radii",
+        action="store_true",
+        default=False,
+        help="Allow soma (type 1) radii to be modified during cleaning.",
+    )
+    soma_group_v.add_argument(
+        "--preserve-soma-radii",
+        action="store_true",
+        default=False,
+        help="Keep soma (type 1) radii unchanged during cleaning.",
+    )
+    val_radii.add_argument("--percentile-min", type=float, default=None, help="Global min percentile.")
+    val_radii.add_argument("--percentile-max", type=float, default=None, help="Global max percentile.")
+    val_radii.add_argument("--abs-min", type=float, default=None, help="Global min absolute radius.")
+    val_radii.add_argument("--abs-max", type=float, default=None, help="Global max absolute radius.")
     _feature_json_arg(val_radii)
 
     # ------------------------------ visualization
@@ -339,9 +429,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.tool == "batch" and args.feature == "radii-clean":
+            cfg_overrides = _apply_radii_cli_overrides(args, _parse_config_overrides(args.config_json))
             out = batch_clean_radii_path(
                 str(args.target),
-                config_overrides=_parse_config_overrides(args.config_json),
+                config_overrides=cfg_overrides,
             )
             _print_json(out)
             if out.get("log_path"):
@@ -369,9 +460,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.tool == "validation" and args.feature == "radii-clean":
+            cfg_overrides = _apply_radii_cli_overrides(args, _parse_config_overrides(args.config_json))
             out = validation_clean_radii_path(
                 str(args.target),
-                config_overrides=_parse_config_overrides(args.config_json),
+                config_overrides=cfg_overrides,
             )
             _print_json(out)
             if out.get("log_path"):

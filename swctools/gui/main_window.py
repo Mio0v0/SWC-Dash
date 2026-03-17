@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDockWidget,
+    QFrame,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QMenuBar,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QStatusBar,
@@ -626,6 +628,15 @@ class SWCMainWindow(QMainWindow):
         self.setStatusBar(self._status)
         self._status.showMessage("Ready — open an SWC file to start.")
 
+    def _wrap_control_widget(self, inner: QWidget) -> QWidget:
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        area.setWidget(inner)
+        return area
+
     # --------------------------------------------------------- Document helpers
     def _active_editor(self) -> EditorTab | None:
         idx = self._canvas_tabs.currentIndex()
@@ -677,6 +688,8 @@ class SWCMainWindow(QMainWindow):
             self._table_widget.load_dataframe(pd.DataFrame(columns=SWC_COLS), "No SWC loaded")
             self._info_label.setText("No SWC file loaded.")
             self._edit_log_text.setPlainText("No morphology edits recorded for this session yet.")
+            self._validation_radii_panel.set_loaded_swc(None, "", "")
+            self._batch_tab.set_loaded_swc(None, "", "")
             self._refresh_canvas_surface()
             self._refresh_simplification_panel_state()
             self._refresh_validation_auto_label_panel_state()
@@ -692,6 +705,8 @@ class SWCMainWindow(QMainWindow):
         self._table_widget.load_dataframe(doc.df, doc.filename)
         self._update_info_label(doc.df, n_roots, n_soma, filename=doc.filename)
         self._refresh_morph_edit_tab(doc)
+        self._validation_radii_panel.set_loaded_swc(doc.df, doc.filename, doc.file_path)
+        self._batch_tab.set_loaded_swc(doc.df, doc.filename, doc.file_path)
         self._validation_tab.load_swc(
             doc.df,
             doc.filename,
@@ -1376,19 +1391,19 @@ class SWCMainWindow(QMainWindow):
             return
 
         if key == "batch":
-            self._control_tabs.addTab(self._batch_tab.split_tab_widget(), "Split")
-            self._control_tabs.addTab(self._batch_tab.validation_tab_widget(), "Validation")
-            self._control_tabs.addTab(self._batch_tab.auto_tab_widget(), "Auto Label")
-            self._control_tabs.addTab(self._batch_tab.radii_tab_widget(), "Radii Cleaning")
+            self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.split_tab_widget()), "Split")
+            self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.validation_tab_widget()), "Validation")
+            self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.auto_tab_widget()), "Auto Label")
+            self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.radii_tab_widget()), "Radii Cleaning")
             self._control_tabs.setCurrentIndex(0)
             self._on_control_tab_changed(self._control_tabs.currentIndex())
             return
 
         if key == "validation":
-            self._control_tabs.addTab(self._validation_tab, "Validation")
-            self._control_tabs.addTab(self._validation_auto_label_panel, "Auto Label")
-            self._control_tabs.addTab(self._validation_radii_panel, "Radii Cleaning")
-            self._control_tabs.setCurrentWidget(self._validation_tab)
+            self._control_tabs.addTab(self._wrap_control_widget(self._validation_tab), "Validation")
+            self._control_tabs.addTab(self._wrap_control_widget(self._validation_auto_label_panel), "Auto Label")
+            self._control_tabs.addTab(self._wrap_control_widget(self._validation_radii_panel), "Radii Cleaning")
+            self._control_tabs.setCurrentIndex(0)
             self._on_control_tab_changed(self._control_tabs.currentIndex())
             return
 
@@ -1397,10 +1412,10 @@ class SWCMainWindow(QMainWindow):
             if doc is None:
                 self._on_control_tab_changed(self._control_tabs.currentIndex())
                 return
-            self._control_tabs.addTab(doc.controls, "Label Editing")
-            self._control_tabs.addTab(self._simplification_panel, "Simplification")
+            self._control_tabs.addTab(self._wrap_control_widget(doc.controls), "Label Editing")
+            self._control_tabs.addTab(self._wrap_control_widget(self._simplification_panel), "Simplification")
             if previous_label == "simplification":
-                self._control_tabs.setCurrentWidget(self._simplification_panel)
+                self._control_tabs.setCurrentIndex(1)
             else:
                 self._control_tabs.setCurrentIndex(0)
             self._refresh_simplification_panel_state()
@@ -1412,8 +1427,8 @@ class SWCMainWindow(QMainWindow):
             return
 
         # default: visualization
-        self._control_tabs.addTab(self._viz_control, "View Controls")
-        self._control_tabs.setCurrentWidget(self._viz_control)
+        self._control_tabs.addTab(self._wrap_control_widget(self._viz_control), "View Controls")
+        self._control_tabs.setCurrentIndex(0)
         self._on_control_tab_changed(self._control_tabs.currentIndex())
 
     # --------------------------------------------------------- Feature routing
@@ -1803,10 +1818,7 @@ class SWCMainWindow(QMainWindow):
         self._data_dock.show()
         self._control_dock.show()
         self._precheck_dock.hide()
-        if self._is_auto_label_control_active():
-            self._show_auto_typing_guide_floating()
-        else:
-            self._auto_guide_dock.hide()
+        self._auto_guide_dock.hide()
         # Don't force exact dock sizes here; allow users to drag boundaries.
         try:
             # Enable animated/interactive docks so the sash is draggable.
@@ -1888,10 +1900,9 @@ class SWCMainWindow(QMainWindow):
         return label == "validation"
 
     def _on_control_tab_changed(self, _index: int):
-        if self._is_auto_label_control_active():
-            self._show_auto_typing_guide_floating()
-        else:
-            self._auto_guide_dock.hide()
+        # Do not auto-popup guide docks on tab/tool switches.
+        # Guides are opened only by explicit user actions.
+        self._auto_guide_dock.hide()
         self._precheck_dock.hide()
         if self._active_tool in ("morphology_editing", "dendrogram"):
             self._refresh_simplification_panel_state()
