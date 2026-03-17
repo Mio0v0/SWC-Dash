@@ -1434,6 +1434,14 @@ class SWCMainWindow(QMainWindow):
     # --------------------------------------------------------- Feature routing
     def _activate_feature(self, name: str):
         key = (name or "").strip().lower()
+        if (
+            key != "validation"
+            and key != (self._active_tool or "").strip().lower()
+            and hasattr(self, "_validation_tab")
+            and self._validation_tab.is_running()
+        ):
+            self._append_log("Validation is running. Wait for completion before switching tools.", "WARN")
+            return
         if key == "batch":
             self._active_tool = "batch"
             self._set_control_tabs_for_feature("batch")
@@ -1942,6 +1950,8 @@ class SWCMainWindow(QMainWindow):
     def closeEvent(self, event):
         self._closing_app = True
         try:
+            if hasattr(self, "_validation_tab"):
+                self._validation_tab.stop_worker(wait_ms=2000)
             for doc in list(self._documents.values()):
                 self._write_closed_copy_and_log(doc)
         finally:

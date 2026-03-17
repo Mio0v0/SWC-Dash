@@ -332,7 +332,27 @@ class ValidationTabWidget(QWidget):
             self._save_status.setText(f"Validation error: {e}")
             self._save_status.setStyleSheet("color: #d62728; font-size: 12px;")
 
+    def is_running(self) -> bool:
+        return bool(self._worker_thread is not None and self._worker_thread.isRunning())
+
+    def stop_worker(self, wait_ms: int = 3000):
+        if self._worker_thread is None:
+            return
+        try:
+            if self._worker_thread.isRunning():
+                self._worker_thread.quit()
+                self._worker_thread.wait(int(wait_ms))
+        except Exception:
+            pass
+        if self._worker_thread is not None and not self._worker_thread.isRunning():
+            self._cleanup_worker_refs()
+
     def _start_validation_worker(self, swc_text: str):
+        if self.is_running():
+            self._save_status.setText("Validation already running. Please wait.")
+            self._save_status.setStyleSheet("color: #555; font-size: 12px;")
+            return
+
         self._run_id += 1
         run_id = int(self._run_id)
         self._btn_run.setEnabled(False)
@@ -340,8 +360,13 @@ class ValidationTabWidget(QWidget):
         self._save_status.setStyleSheet("color: #555; font-size: 12px;")
 
         if self._worker_thread is not None:
-            self._worker_thread.quit()
-            self._worker_thread.wait(100)
+            try:
+                self._worker_thread.quit()
+                self._worker_thread.wait(200)
+            except Exception:
+                pass
+            if self._worker_thread is not None and not self._worker_thread.isRunning():
+                self._cleanup_worker_refs()
 
         self._worker_thread = QThread(self)
         self._worker = _ValidationWorker(run_id, swc_text)
