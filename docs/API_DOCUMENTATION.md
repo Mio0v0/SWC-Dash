@@ -1,58 +1,34 @@
 # API Documentation (Library Reference)
 
-This document describes the Python library API for `swctools`.
+This document covers Python-callable APIs in `swctools`.
 
-## Design
+## How To Read This Doc
 
-- CLI and GUI both call shared backend functions.
-- Feature logic lives in Python modules under `swctools/tools`.
-- Config values live in JSON files under each tool's `configs/` folder.
-- Plugin methods can override builtin feature methods through the registry.
+- Use `swctools.api` for most integrations.
+- Use feature modules directly only when you need tool-specific behavior.
+- Use plugin registry APIs to override method implementations.
 
-## Primary Import
+## API Layers
+
+1. Stable convenience API: `swctools.api`
+2. Tool feature modules: `swctools.tools.<tool>.features.<feature>`
+3. Plugin registry: `swctools.plugins`
+
+## Recommended Import
 
 ```python
 import swctools.api as swc
 ```
 
-## Tool -> Feature Map (Current Structure)
+## 1) Public Convenience API (`swctools.api`)
 
-Python backend modules under `swctools/tools/*/features`:
+Source: `swctools/api.py`
 
-- `batch_processing`
-  - `auto_typing`
-  - `batch_validation`
-  - `radii_cleaning`
-  - `split`
-  - `swc_splitter`
-  - `validation`
-- `validation`
-  - `auto_fix`
-  - `core`
-  - `radii_cleaning`
-  - `run_checks`
-- `visualization`
-  - `mesh_editing`
-- `morphology_editing`
-  - `dendrogram_editing`
-  - `simplification`
-- `atlas_registration`
-  - `registration`
-- `analysis`
-  - `summary`
-
-Notes:
-
-- `split`, `validation`, and `core` are helper/internal feature modules.
-- Public library calls should use `swctools.api` exports.
-
-## Public API (`swctools.api`)
-
-### Data Types
+### Data Type
 
 #### `RuleBatchOptions`
 
-Dataclass used by batch auto-typing:
+Dataclass for auto-typing:
 
 - `soma: bool`
 - `axon: bool`
@@ -65,206 +41,284 @@ Dataclass used by batch auto-typing:
 
 #### `batch_validate_folder(folder, *, config_overrides=None) -> dict`
 
-Runs batch validation on all SWC files in a folder.
+Runs validation over all SWC files in a folder.
 
 #### `batch_split_folder(folder, *, config_overrides=None) -> dict`
 
-Splits SWC files by soma roots.
+Splits each SWC by soma-root trees.
 
 #### `batch_auto_typing(folder, *, options=None, config_overrides=None) -> RuleBatchResult`
 
-Runs rule-based auto-typing on a folder.
+Runs rule-based auto typing over a folder.
 
 #### `batch_radii_cleaning(folder, *, config_overrides=None) -> dict`
 
-Runs radii cleaning on all SWC files in a folder.
+Runs radii cleaning on a folder.
 
 #### `radii_clean_path(path, *, config_overrides=None) -> dict`
 
-Runs shared radii cleaning on either one SWC file or a folder.
+Runs radii cleaning on either one file or one folder.
 
 ### Validation
 
-Validation radii cleaning uses the same backend implementation as batch radii cleaning.
-
 #### `validation_run_text(swc_text, *, config_overrides=None, feature_overrides=None) -> ValidationReport`
 
-Runs structured validation on SWC text.
+Runs structured validation from SWC text.
 
 #### `validation_run_file(path, *, config_overrides=None, feature_overrides=None) -> ValidationReport`
 
-Runs structured validation on one SWC file.
+Runs structured validation from file path.
 
 #### `auto_fix_text(swc_text, *, config_overrides=None) -> dict`
 
-Runs auto-fix and returns sanitized content plus validation report.
+Runs sanitize + validation from text.
 
 #### `auto_fix_file(path, *, out_path=None, write_output=False, config_overrides=None) -> dict`
 
-Runs auto-fix for a file and optionally writes output.
+Runs sanitize + validation from file, optionally writes output.
+
+#### `validation_auto_typing_file(file_path, *, options=None, config_overrides=None, output_path=None, write_output=True, write_log=True)`
+
+Runs the shared auto-typing logic on a single file.
 
 ### Visualization
 
 #### `build_mesh_from_text(swc_text, *, config_overrides=None) -> dict`
 
-Builds a reusable mesh payload from SWC text.
+Builds mesh summary payload from SWC text.
 
 #### `build_mesh_from_file(path, *, config_overrides=None) -> dict`
 
-Builds a reusable mesh payload from a file.
+Builds mesh summary payload from file.
 
 ### Morphology Editing
 
 #### `reassign_subtree_types(swc_text, *, node_id, new_type, config_overrides=None) -> dict`
 
-Reassigns all nodes in a selected subtree to a new SWC type.
+Reassigns subtree node types in memory.
 
 #### `reassign_subtree_types_in_file(path, *, node_id, new_type, out_path=None, write_output=False, config_overrides=None) -> dict`
 
-File wrapper for subtree type reassignment with optional write.
+File wrapper for subtree type reassignment.
 
 #### `morphology_smart_decimation_text(swc_text, *, config_overrides=None) -> dict`
 
-Runs graph-aware RDP simplification and returns simplified SWC bytes plus stats.
-
-How the backend works:
-
-1. Build directed morphology graph from SWC topology.
-2. Protect structural nodes (roots, optional tips, optional bifurcations).
-3. Extract anchor-to-anchor linear paths.
-4. Apply RDP with `thresholds.epsilon`.
-5. Protect radius-sensitive nodes using `thresholds.radius_tolerance`.
-6. Rewire parent links to nearest kept ancestors for a valid simplified tree.
-
-Important config parameters:
-
-- `thresholds.epsilon`: higher means stronger simplification.
-- `thresholds.radius_tolerance`: lower means stricter radius-preservation.
-- `flags.keep_tips`: keep terminal points.
-- `flags.keep_bifurcations`: keep branch points.
-- `flags.keep_roots`: keep root points.
-
-Common output fields include:
-
-- `dataframe`
-- `bytes`
-- `original_node_count`
-- `new_node_count`
-- `reduction_percent`
-- `kept_node_ids`
-- `removed_node_ids`
-- `params_used`
-- `protected_counts`
+Runs graph-aware RDP simplification from text.
 
 #### `morphology_smart_decimation_file(path, *, out_path=None, write_output=False, config_overrides=None) -> dict`
 
-File wrapper for Smart Decimation.
+File wrapper for smart decimation. Produces simplification log file.
 
-- if `write_output=True`, writes simplified SWC
-- always writes a simplification text log
-- returns `log_path`, `input_path`, and optional `output_path`
-
-### Atlas Registration (Placeholder)
+### Atlas Registration (placeholder)
 
 #### `register_to_atlas(path, *, atlas_name=None, config_overrides=None) -> FeatureResult`
 
-Returns a structured placeholder response (`ok=False`) until implemented.
+Structured placeholder response for atlas registration.
 
-### Analysis (Placeholder)
+### Analysis
 
 #### `analysis_summary_file(path, *, config_overrides=None) -> dict`
 
-Returns basic morphology summary information.
+Basic morphology statistics.
 
 ### Plugins
 
+#### `load_plugin_module(module_name, *, force_reload=False) -> dict`
+
+Load one plugin module (manifest validation + method registration).
+Note: registrations are process-local; use `autoload_plugins_from_environment`
+for automatic loading in new CLI processes.
+
+#### `load_plugins(modules) -> list[dict]`
+
+Load multiple plugin modules and return per-module status.
+
+#### `autoload_plugins_from_environment(env_var="SWCTOOLS_PLUGINS") -> list[dict]`
+
+Load comma-separated plugin module list from environment variable.
+
+#### `register_plugin_manifest(manifest) -> PluginManifest`
+
+Register validated plugin manifest metadata.
+
+#### `register_plugin_method(plugin_id, feature_key, method_name, func) -> None`
+
+Register a plugin-owned method for one feature/method key.
+
+#### `unregister_plugin(plugin_id) -> None`
+
+Remove plugin manifest and methods owned by that plugin.
+
 #### `register_method(feature_key, method_name, func) -> None`
 
-Registers plugin method override for feature dispatch.
+Register plugin override method.
 
 #### `unregister_method(feature_key, method_name) -> None`
 
-Removes plugin method override.
+Remove plugin override method.
 
 #### `list_feature_methods(feature_key) -> dict`
 
-Lists plugin and builtin methods for one feature key.
+List methods for a single feature key.
 
 #### `list_all_feature_methods() -> dict`
 
-Lists methods for all feature keys.
+List methods for all feature keys.
 
-## Validation Backend Models
+#### `list_plugins() -> list[dict]`
 
-Structured validation output uses these core models:
+List loaded/registered plugin manifests.
+
+#### `get_plugin(plugin_id) -> dict | None`
+
+Get one plugin manifest by plugin id.
+
+## 2) Tool Feature Module Entry Points
+
+These are callable if you want per-feature direct imports.
+
+## Batch Processing
+
+- `swctools.tools.batch_processing.features.batch_validation`
+  - `validate_swc_text(...)`
+  - `validate_folder(...)`
+- `swctools.tools.batch_processing.features.swc_splitter`
+  - `split_swc_text(...)`
+  - `split_folder(...)`
+- `swctools.tools.batch_processing.features.auto_typing`
+  - `run_folder(...)`
+  - `options_to_dict(...)`
+- `swctools.tools.batch_processing.features.radii_cleaning`
+  - `clean_swc_text(...)`
+  - `clean_file(...)`
+  - `clean_folder(...)`
+  - `clean_path(...)`
+
+## Validation
+
+- `swctools.tools.validation.features.run_checks`
+  - `validate_text(...)`
+  - `validate_file(...)`
+- `swctools.tools.validation.features.auto_fix`
+  - `auto_fix_text(...)`
+  - `auto_fix_file(...)`
+- `swctools.tools.validation.features.auto_typing`
+  - `run_file(...)`
+- `swctools.tools.validation.features.radii_cleaning`
+  - `clean_path(...)`
+  - `clean_file(...)`
+  - `clean_folder(...)`
+
+## Visualization
+
+- `swctools.tools.visualization.features.mesh_editing`
+  - `build_mesh_from_text(...)`
+  - `build_mesh_from_file(...)`
+
+## Morphology Editing
+
+- `swctools.tools.morphology_editing.features.dendrogram_editing`
+  - `reassign_subtree_types(...)`
+  - `reassign_subtree_types_in_file(...)`
+- `swctools.tools.morphology_editing.features.simplification`
+  - `simplify_dataframe(...)`
+  - `simplify_swc_text(...)`
+  - `simplify_file(...)`
+
+## Atlas Registration (placeholder)
+
+- `swctools.tools.atlas_registration.features.registration`
+  - `register_to_atlas(...)`
+
+## Analysis
+
+- `swctools.tools.analysis.features.summary`
+  - `analyze_text(...)`
+  - `analyze_file(...)`
+
+## 3) Validation Engine and Models
+
+Module: `swctools.tools.validation`
+
+Exposed helpers:
+
+- `load_validation_config(...)`
+- `build_precheck_summary(...)`
+- `run_validation_text(...)`
+- `register_check(...)`
+- `register_plugin_check(...)`
+- `get_check(...)`
+- `list_checks(...)`
+
+Result models:
 
 - `PreCheckItem`
 - `CheckResult`
 - `ValidationReport`
 
-They are available from:
+## Smart Decimation (How It Works)
+
+1. Build directed graph from SWC `id`/`parent`.
+2. Protect structural nodes (roots, optional tips, optional bifurcations).
+3. Extract anchor-to-anchor linear paths.
+4. Apply RDP with `thresholds.epsilon`.
+5. Protect radius-sensitive nodes where:
+   - `abs(node_radius - path_mean_radius) / path_mean_radius > thresholds.radius_tolerance`
+6. Rewire kept nodes to nearest kept ancestor.
+
+Key parameters (`simplification.json`):
+
+- `thresholds.epsilon`
+- `thresholds.radius_tolerance`
+- `flags.keep_tips`
+- `flags.keep_bifurcations`
+- `flags.keep_roots`
+
+## Plugin Override Pattern
 
 ```python
-from swctools.tools.validation import PreCheckItem, CheckResult, ValidationReport
+from swctools.plugins import load_plugin_module, register_method
+
+def my_method(*args, **kwargs):
+    ...
+
+register_method("batch_processing.auto_typing", "default", my_method)
+load_plugin_module("my_lab_plugins.brainglobe_adapter")
 ```
 
-`ValidationReport.to_dict()` includes:
+## Plugin Contract (Versioned)
 
-- `precheck`
-- `results`
-- `summary` (`pass`, `warning`, `fail`, `total`)
+External plugin modules should expose:
 
-## Plugin Extension Pattern
+1. `PLUGIN_MANIFEST` dictionary (or `get_plugin_manifest()`)
+2. one of:
+   - `register_plugin(registrar)` function
+   - `PLUGIN_METHODS` mapping/list
 
-Feature methods resolve by priority:
-
-1. plugin method
-2. builtin method
-
-Example:
+Minimal `PLUGIN_MANIFEST`:
 
 ```python
-from swctools.plugins import register_method
-
-
-def my_auto_typing(folder, options, config):
-    # custom implementation
-    return ...
-
-
-register_method("batch_processing.auto_typing", "default", my_auto_typing)
+PLUGIN_MANIFEST = {
+    "plugin_id": "my_lab.brainglobe",
+    "name": "BrainGlobe Adapter",
+    "version": "0.1.0",
+    "api_version": "1",
+    "capabilities": ["atlas_registration", "region_annotation"],
+}
 ```
+
+Starter template in this repo:
+
+- `examples/plugins/brainglobe_adapter_template.py`
 
 ## Config Files
 
-Default configs are stored per feature:
+Per-feature config path pattern:
 
 - `swctools/tools/<tool>/configs/<feature>.json`
 
-Validation config:
+Examples:
 
 - `swctools/tools/validation/configs/default.json`
-
-Smart Decimation config:
-
-- `swctools/tools/morphology_editing/configs/simplification.json`
-
-Shared radii-clean config:
-
 - `swctools/tools/batch_processing/configs/radii_cleaning.json`
-
-Use runtime overrides with `config_overrides` (API) or `--config-json` (CLI).
-
-## Minimal Usage Example
-
-```python
-import swctools.api as swc
-
-# Validation
-report = swc.validation_run_file("data/example.swc")
-print(report.summary())
-
-# Smart decimation
-result = swc.morphology_smart_decimation_file("data/example.swc", write_output=True)
-print(result["original_node_count"], result["new_node_count"], result["log_path"])
-```
+- `swctools/tools/morphology_editing/configs/simplification.json`

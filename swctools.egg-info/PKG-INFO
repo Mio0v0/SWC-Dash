@@ -17,125 +17,127 @@ Requires-Dist: vispy>=0.14; extra == "gui"
 
 # swctools
 
-`swctools` is a modular Python package for SWC morphology workflows with a shared backend used by both CLI and GUI interfaces.
+`swctools` is a modular SWC morphology toolkit with:
 
-## First-Time Setup
+- a shared Python backend (`swctools/core` + `swctools/tools`)
+- a CLI (`swctools`)
+- a desktop GUI (`swctools-gui`)
 
-If you just cloned this repo and want to run it locally:
+CLI and GUI call the same feature backend functions.
+
+## What This Project Does
+
+Top-level tool areas:
+
+1. Batch Processing
+2. Validation
+3. Visualization
+4. Morphology Editing
+5. Atlas Registration (placeholder)
+6. Analysis (placeholder)
+
+Core workflows currently include:
+
+- SWC split by soma-root trees
+- Rule-based auto typing
+- Single-file and batch validation
+- Radius outlier cleaning
+- Dendrogram subtree type reassignment
+- Smart Decimation (RDP-based simplification)
+
+## Install
 
 ```bash
-git clone <your-repo-url>
-cd SWC-Dash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[gui]"
 ```
 
-CLI-only install (no GUI dependencies):
+CLI-only install:
 
 ```bash
 pip install -e .
 ```
 
-Verify install:
+## Run
+
+CLI:
 
 ```bash
 swctools --help
-swctools-gui
 ```
 
-If `swctools` or `swctools-gui` is not found, make sure the virtual environment is active:
+GUI:
 
 ```bash
-source .venv/bin/activate
+swctools-gui
+# or
+python -m swctools.gui.main
 ```
 
-## Quick Start
-
-Run CLI examples:
+## Quick CLI Examples
 
 ```bash
 swctools batch split ./data
 swctools batch validate ./data
 swctools batch auto-typing ./data --soma --axon --basal
+swctools batch radii-clean ./data
+
+swctools validation rule-guide
 swctools validation run ./data/single-soma.swc
+swctools validation auto-fix ./data/single-soma.swc --write
+
+swctools morphology smart-decimation ./data/single-soma.swc --write
+
+swctools plugins load my_lab_plugins.brainglobe_adapter
+swctools plugins list-loaded
 ```
-
-Run GUI:
-
-```bash
-swctools-gui
-```
-
-## Architecture
-
-- `swctools/core`: shared algorithms, SWC I/O, and models.
-- `swctools/tools`: tool/feature modules organized by domain.
-- `swctools/plugins`: method registry for feature-level overrides.
-- `swctools/cli`: terminal interface that calls tool/feature APIs.
-- `swctools/gui`: Qt desktop interface that calls shared backend logic.
 
 ## Documentation
 
-- [CLI Reference](docs/CLI_REFERENCE.md)
-- [API / Library Documentation](docs/API_DOCUMENTATION.md)
+- [CLI Reference](docs/CLI_REFERENCE.md): full command reference and options
+- [API / Library Documentation](docs/API_DOCUMENTATION.md): Python API surface and feature entry points
 
-## Tool -> Feature map
+## Architecture (High-Level)
 
-- Batch Processing
-  - `batch_validation`
-  - `swc_splitter`
-  - `auto_typing`
-  - `radii_cleaning`
-- Validation
-  - `auto_fix`
-- Visualization
-  - `mesh_editing` (placeholder)
-- Morphology Editing
-  - `dendrogram_editing`
-- Atlas Registration
-  - `registration` (placeholder)
-- Analysis
-  - `summary` (placeholder)
+- `swctools/core`: shared data models, IO, validation/rules, reporting
+- `swctools/tools`: tool/feature backends (actual behavior)
+- `swctools/plugins`: registry for builtin + user override methods
+- `swctools/cli`: terminal interface layer
+- `swctools/gui`: Qt interface layer
 
-Each feature stores defaults in `swctools/tools/<tool>/configs/<feature>.json`.
+## Config
 
-## CLI examples
+Feature config JSON lives at:
 
-```bash
-swctools batch split /path/to/folder
-# swctools batch split /Users/tuo/Desktop/SWC-Data
-# swctools batch split ./data
+- `swctools/tools/<tool>/configs/<feature>.json`
 
-swctools batch validate /path/to/folder
-# swctools batch validate ./data
-# swctools batch validate ./data --config-json '{"checks":{"no_back_tracking":{"enabled":true}}}'
+Examples:
 
-swctools batch auto-typing /path/to/folder --soma --axon --basal
-# swctools batch auto-typing ./data --soma --axon --basal
-swctools validation auto-fix /path/to/file.swc --write
-swctools validation run /path/to/file.swc
-# swctools validation run ./data/single-soma.swc
-swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write
-swctools plugins list
-```
-
-## Plugin override example
-
-```python
-from swctools.plugins import register_method
-
-
-def my_auto_typing(folder, options, config):
-    # custom implementation
-    ...
-
-register_method("batch_processing.auto_typing", "default", my_auto_typing)
-```
+- `swctools/tools/validation/configs/default.json`
+- `swctools/tools/batch_processing/configs/radii_cleaning.json`
+- `swctools/tools/morphology_editing/configs/simplification.json`
 
 ## Notes
 
-- JSON config controls parameters and method selection.
-- Algorithms remain in Python modules, not JSON.
-- No web/server layer is included.
+- JSON controls parameters and method selection.
+- Algorithm/data transformation logic stays in Python.
+- No web/server/API service layer is included.
+
+## Plugin Contract (For Many External Plugins)
+
+`swctools` supports plugin modules through a small versioned contract:
+
+1. `PLUGIN_MANIFEST` (or `get_plugin_manifest()`) must provide:
+   - `plugin_id`, `name`, `version`, `api_version`
+   - optional `description`, `author`, `capabilities`
+2. Plugin module must provide either:
+   - `register_plugin(registrar)` function, or
+   - `PLUGIN_METHODS` dictionary/list
+3. Plugin methods register against existing feature keys, e.g.:
+   - `batch_processing.auto_typing`
+   - `atlas_registration.registration`
+
+This lets you integrate external libraries (like BrainGlobe adapters) without
+rewriting their internal algorithms.

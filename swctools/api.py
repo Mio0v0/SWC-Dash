@@ -8,10 +8,18 @@ from __future__ import annotations
 
 from swctools.core.auto_typing import RuleBatchOptions
 from swctools.plugins import (
+    autoload_plugins_from_environment,
+    get_plugin,
     list_all_feature_methods,
     list_feature_methods,
+    list_plugins,
+    load_plugin_module,
+    load_plugins,
     register_method,
+    register_plugin_manifest,
+    register_plugin_method,
     unregister_method,
+    unregister_plugin,
 )
 from swctools.tools.analysis.features.summary import analyze_file as analysis_summary_file
 from swctools.tools.atlas_registration.features.registration import register_to_atlas
@@ -67,6 +75,14 @@ __all__ = [
     "morphology_smart_decimation_file",
     "register_to_atlas",
     "analysis_summary_file",
+    "load_plugin_module",
+    "load_plugins",
+    "autoload_plugins_from_environment",
+    "register_plugin_manifest",
+    "register_plugin_method",
+    "unregister_plugin",
+    "list_plugins",
+    "get_plugin",
     "register_method",
     "unregister_method",
     "list_feature_methods",

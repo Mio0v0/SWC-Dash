@@ -14,7 +14,13 @@ from pathlib import Path
 from swctools.core.auto_typing import RuleBatchOptions
 from swctools.core.auto_typing_catalog import format_auto_typing_guide_text
 from swctools.core.config import merge_config
-from swctools.plugins.registry import list_all_feature_methods, list_feature_methods
+from swctools.plugins import (
+    autoload_plugins_from_environment,
+    list_all_feature_methods,
+    list_feature_methods,
+    list_plugins,
+    load_plugin_module,
+)
 from swctools.tools.analysis.features.summary import analyze_file
 from swctools.tools.atlas_registration.features.registration import register_to_atlas
 from swctools.tools.batch_processing.features.auto_typing import run_folder as run_auto_typing
@@ -392,16 +398,20 @@ def build_parser() -> argparse.ArgumentParser:
     _feature_json_arg(analysis_summary)
 
     # ------------------------------ plugins
-    plugins = sub.add_parser("plugins", help="Inspect registered plugin methods")
+    plugins = sub.add_parser("plugins", help="Plugin manager and registry inspection")
     plugins_sub = plugins.add_subparsers(dest="feature")
 
     plugins_list = plugins_sub.add_parser("list", help="List plugin + builtin methods")
     plugins_list.add_argument("--feature-key", default="")
+    plugins_list_loaded = plugins_sub.add_parser("list-loaded", help="List loaded plugin manifests")
+    plugins_load = plugins_sub.add_parser("load", help="Load plugin module by import path")
+    plugins_load.add_argument("module", help="Python module path, e.g. my_plugins.brain_globe")
 
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
+    autoload_plugins_from_environment()
     argv = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -599,6 +609,12 @@ def main(argv: list[str] | None = None) -> int:
                 _print_json(list_feature_methods(args.feature_key))
             else:
                 _print_json(list_all_feature_methods())
+            return 0
+        if args.tool == "plugins" and args.feature == "list-loaded":
+            _print_json({"plugins": list_plugins()})
+            return 0
+        if args.tool == "plugins" and args.feature == "load":
+            _print_json(load_plugin_module(str(args.module)))
             return 0
 
         parser.print_help()

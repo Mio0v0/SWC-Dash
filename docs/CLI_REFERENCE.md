@@ -1,97 +1,76 @@
 # CLI Reference
 
-This document covers the `swctools` command-line interface.
+This is the complete command reference for the `swctools` CLI.
 
-## Install and Run
+## Install and Verify
 
 ```bash
 pip install -e .
 swctools --help
 ```
 
-Entry points from `pyproject.toml`:
-
-- `swctools` -> CLI
-- `swctools-gui` -> GUI launcher
-
-## Command Structure
+## Command Shape
 
 ```bash
-swctools <tool> <feature> [arguments] [options]
+swctools <tool> <feature> [args] [options]
 ```
 
-Use the full `swctools ...` command. Do not run `batch ...` by itself.
-
-## Tool -> Feature Map (Current Structure)
+Top-level tools:
 
 - `batch`
-  - `validate`
-  - `split`
-  - `auto-typing`
-  - `radii-clean`
 - `validation`
-  - `rule-guide`
-  - `run`
-  - `auto-fix`
-  - `radii-clean`
 - `visualization`
-  - `mesh-editing`
 - `morphology`
-  - `dendrogram-edit`
-  - `smart-decimation`
 - `atlas`
-  - `register` (placeholder)
 - `analysis`
-  - `summary` (placeholder)
 - `plugins`
-  - `list`
 
 ## Common Option: `--config-json`
 
-Most feature commands support inline config override:
+Most feature commands accept:
 
 ```bash
-swctools validation run file.swc --config-json '{"checks":{"no_back_tracking":{"enabled":true}}}'
+--config-json '{"some":"override"}'
 ```
 
-The value must be a JSON object.
+This must be a JSON object and is merged into feature config for that run.
 
-Shared radii-clean config file:
+## `batch`
 
-- `swctools/tools/batch_processing/configs/radii_cleaning.json`
+### `swctools batch validate <folder>`
 
-## Commands
+- Purpose: run validation on all SWC files in a folder
+- Special behavior: if `folder` is literal `rule-guide`, prints rules only
 
-### Batch Processing
+Options:
 
-#### `swctools batch validate <folder> [--config-json JSON]`
+- `--config-json JSON`
 
-Runs batch validation over all SWC files in a folder using the same checks as `validation run`.
+Example:
 
-Special alias:
+```bash
+swctools batch validate ./data
+swctools batch validate rule-guide
+```
 
-- `swctools batch validate rule-guide` prints only the validation Rule Guide (no file run).
+### `swctools batch split <folder>`
 
-Output:
+- Purpose: split SWC files by soma-root trees
 
-- pre-check summary (rule guide)
-- per-file validation results
-- batch summary + report file path
+Options:
 
-#### `swctools batch split <folder> [--config-json JSON]`
+- `--config-json JSON`
 
-Splits each SWC into trees by soma roots.
+Example:
 
-Default output layout:
+```bash
+swctools batch split ./data
+```
 
-- output folder: `<folder>/<folder_name>_split`
-- output files: `<original_swc_name>_tree1.swc`, `<original_swc_name>_tree2.swc`, ...
+### `swctools batch auto-typing <folder>`
 
-#### `swctools batch auto-typing <folder> [flags] [--config-json JSON]`
-
-Rule-based auto-typing over a folder.
-
-Before processing, CLI prints an `Auto Typing Rule Guide` section.
+- Purpose: rule-based auto-labeling for SWCs in folder
+- CLI prints auto-typing rule guide before processing
 
 Flags:
 
@@ -101,130 +80,231 @@ Flags:
 - `--basal`
 - `--rad`
 - `--zip`
+- `--config-json JSON`
 
-If no flags are provided, defaults come from `auto_typing.json`.
+Example:
 
-#### `swctools batch radii-clean <file_or_folder> [--config-json JSON]`
+```bash
+swctools batch auto-typing ./data --soma --axon --basal
+```
 
-Runs radii cleaning on one SWC file or all SWCs in a folder.
+### `swctools batch radii-clean <target>`
 
-Behavior:
+- Purpose: clean abnormal radii on a file or folder
 
-- detects non-positive/non-finite radii
-- detects local spikes/dips vs parent+children neighborhood
-- replaces abnormal radii with local mean(parent + children)
-- writes a text log report
+Arguments:
 
-### Validation
+- `target`: file path or directory path
 
-#### `swctools validation rule-guide [--config-json JSON]`
+Options:
 
-Prints only the validation Rule Guide (no file run).
+- `--threshold-mode {percentile,absolute}`
+- `--fix-soma-radii`
+- `--preserve-soma-radii`
+- `--percentile-min FLOAT`
+- `--percentile-max FLOAT`
+- `--abs-min FLOAT`
+- `--abs-max FLOAT`
+- `--config-json JSON`
 
-#### `swctools validation run <file.swc> [--config-json JSON]`
+Example:
 
-Runs structured validation checks and prints summary + details.
+```bash
+swctools batch radii-clean ./data/single-soma.swc --threshold-mode absolute --abs-min 0.05 --abs-max 20
+```
 
-#### `swctools validation auto-fix <file.swc> [--write] [--out PATH] [--config-json JSON]`
+## `validation`
 
-Runs auto-fix plus validation report.
+### `swctools validation rule-guide`
 
-- `--write`: writes sanitized SWC
-- `--out`: optional output path
+- Purpose: print validation pre-check/rule guide only
 
-#### `swctools validation radii-clean <file_or_folder> [--config-json JSON]`
+Options:
 
-Runs the same shared radii-clean backend as `batch radii-clean`.
+- `--config-json JSON`
 
-### Visualization
+### `swctools validation run <file>`
 
-#### `swctools visualization mesh-editing <file.swc> [--include-edges] [--config-json JSON]`
+- Purpose: run full structured validation for one file
 
-Builds mesh payload summary for GUI/CLI use.
+Options:
 
-### Morphology Editing
+- `--config-json JSON`
 
-#### `swctools morphology dendrogram-edit <file.swc> --node-id N --new-type T [--write] [--out PATH] [--config-json JSON]`
+Example:
 
-Reassigns a subtree node type.
+```bash
+swctools validation run ./data/single-soma.swc
+```
 
-- `--node-id`: subtree root node id
-- `--new-type`: SWC type to assign
-- `--write`: write updated file
-- `--out`: optional output file path
+### `swctools validation auto-fix <file>`
 
-#### `swctools morphology smart-decimation <file.swc> [--write] [--out PATH] [--config-json JSON]`
+- Purpose: sanitize + revalidate one file
 
-Runs RDP-based Smart Decimation with graph-aware node protection.
+Options:
 
-Protected node rules include:
+- `--write`
+- `--out PATH`
+- `--config-json JSON`
 
-- root/soma nodes
-- optional tips and bifurcations (config flags)
-- radius-sensitive nodes that exceed configured tolerance
+Example:
 
-- `--write`: write simplified SWC
-- `--out`: optional output file path
+```bash
+swctools validation auto-fix ./data/single-soma.swc --write
+```
 
-Output includes node-count reduction and a simplification log file path.
+### `swctools validation radii-clean <target>`
 
-Algorithm summary:
+- Purpose: same shared radii-clean backend used by batch
 
-1. Build SWC graph from node `id` and `parent`.
-2. Create anchor paths between protected structural nodes.
-3. Run RDP on each path interior with `epsilon`.
-4. Protect radius-sensitive nodes with deviation above `radius_tolerance`.
-5. Reconnect kept nodes to nearest kept ancestors and output simplified SWC.
+Arguments:
 
-Parameter meaning (from `simplification.json`):
+- `target`: file path or directory path
 
-- `thresholds.epsilon`: geometric simplification tolerance.
-- `thresholds.radius_tolerance`: relative radius-deviation protection threshold.
-- `flags.keep_tips`: preserve terminal nodes.
-- `flags.keep_bifurcations`: preserve branch points.
-- `flags.keep_roots`: preserve root nodes.
+Options:
 
-### Atlas Registration (Placeholder)
+- `--threshold-mode {percentile,absolute}`
+- `--fix-soma-radii`
+- `--preserve-soma-radii`
+- `--percentile-min FLOAT`
+- `--percentile-max FLOAT`
+- `--abs-min FLOAT`
+- `--abs-max FLOAT`
+- `--config-json JSON`
 
-#### `swctools atlas register <file.swc> [--atlas NAME] [--config-json JSON]`
+## `visualization`
 
-Placeholder command (structured response, not implemented).
+### `swctools visualization mesh-editing <file>`
 
-### Analysis (Placeholder)
+- Purpose: build reusable mesh payload summary
 
-#### `swctools analysis summary <file.swc> [--config-json JSON]`
+Options:
 
-Placeholder/basic summary command.
+- `--include-edges`
+- `--config-json JSON`
 
-### Plugin Inspection
+## `morphology`
 
-#### `swctools plugins list [--feature-key TOOL.FEATURE]`
+### `swctools morphology dendrogram-edit <file> --node-id N --new-type T`
 
-Lists builtin and plugin method names currently registered.
+- Purpose: reassign subtree node types
+
+Options:
+
+- `--node-id INT` (required)
+- `--new-type INT` (required)
+- `--write`
+- `--out PATH`
+- `--config-json JSON`
+
+Example:
+
+```bash
+swctools morphology dendrogram-edit ./data/single-soma.swc --node-id 42 --new-type 3 --write
+```
+
+### `swctools morphology smart-decimation <file>`
+
+- Purpose: graph-aware RDP simplification
+- CLI prints simplification rule guide before running
+
+Options:
+
+- `--write`
+- `--out PATH`
+- `--config-json JSON`
+
+Example:
+
+```bash
+swctools morphology smart-decimation ./data/single-soma.swc --write
+```
+
+## `atlas`
+
+### `swctools atlas register <file>`
+
+- Purpose: atlas registration placeholder command
+
+Options:
+
+- `--atlas NAME`
+- `--config-json JSON`
+
+## `analysis`
+
+### `swctools analysis summary <file>`
+
+- Purpose: basic morphology summary
+
+Options:
+
+- `--config-json JSON`
+
+## `plugins`
+
+### `swctools plugins list`
+
+- Purpose: list builtin/plugin methods in registry
+
+Options:
+
+- `--feature-key TOOL.FEATURE`
+
+Example:
+
+```bash
+swctools plugins list
+swctools plugins list --feature-key batch_processing.auto_typing
+```
+
+### `swctools plugins load <module>`
+
+- Purpose: load an external plugin module by Python import path
+- Contract expected:
+  - `PLUGIN_MANIFEST` dict (or `get_plugin_manifest()`)
+  - `register_plugin(registrar)` OR `PLUGIN_METHODS`
+- Scope: current CLI process only (use `SWCTOOLS_PLUGINS` for autoload in each run)
+
+Example:
+
+```bash
+swctools plugins load my_lab_plugins.brainglobe_adapter
+```
+
+### `swctools plugins list-loaded`
+
+- Purpose: list loaded plugin manifests (`plugin_id`, version, capabilities, API version)
+
+Example:
+
+```bash
+swctools plugins list-loaded
+```
+
+### Environment Autoload
+
+Plugins can autoload on every CLI run via:
+
+```bash
+export SWCTOOLS_PLUGINS="my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_auto_typing"
+```
+
+## Output and Reports
+
+Most commands return JSON/text in terminal and also write report files where applicable.
+
+Typical reports include:
+
+- `*_validation_report.txt`
+- `*_batch_validation_report.txt`
+- `split_report.txt`
+- `*_radii_cleaning_report.txt`
+- `*_auto_typing_report.txt`
+- `*_simplification_log.txt`
 
 ## Exit Codes
 
 - `0`: success
-- `1`: invalid usage / help shown
+- `1`: usage error / parse error
 - `2`: runtime error
-
-## Examples
-
-```bash
-swctools batch validate rule-guide
-swctools batch split /path/to/folder
-swctools batch auto-typing /path/to/folder --soma --axon --basal
-swctools batch radii-clean /path/to/file_or_folder
-
-swctools validation rule-guide
-swctools validation run /path/to/file.swc
-swctools validation auto-fix /path/to/file.swc --write
-swctools validation radii-clean /path/to/file_or_folder
-
-swctools visualization mesh-editing /path/to/file.swc --include-edges
-
-swctools morphology dendrogram-edit /path/to/file.swc --node-id 42 --new-type 3 --write
-swctools morphology smart-decimation /path/to/file.swc --write
-
-swctools plugins list
-```
