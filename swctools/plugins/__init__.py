@@ -1,9 +1,13 @@
 """Plugin helpers for swctools.
 
 Plugin entrypoints can be registered in two ways:
-1) Simple in-process override (direct):
+
+1. Simple in-process override (direct)::
+
        register_method("batch_processing.auto_typing", "default", func)
-2) Dynamic module load with manifest contract:
+
+2. Dynamic module load with manifest contract::
+
        load_plugin_module("my_lab_plugins.brainglobe_adapter")
 """
 

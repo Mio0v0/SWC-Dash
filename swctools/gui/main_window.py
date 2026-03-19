@@ -1,4 +1,4 @@
-"""Main window layout for SWC-QT with tabbed Home/Tools top bar."""
+"""Main window layout for SWC-QT with unified menu + tools/features top bar."""
 
 import os
 import tempfile
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QFrame,
+    QGroupBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -164,8 +165,8 @@ class SWCMainWindow(QMainWindow):
         # Use an in-window top strip instead of the OS menu bar.
         self.menuBar().setVisible(False)
 
-        # ---------------- Top combined bar: Home / Tools ----------------
-        self._top_tabs = self._build_top_tabs()
+        # ---------------- Top unified bar: menu + tools/features ----------------
+        self._top_bar = self._build_top_bar()
 
         # ---------------- Center workspace ----------------
         self._canvas_empty = QWidget()
@@ -186,7 +187,12 @@ class SWCMainWindow(QMainWindow):
 
         # ---------------- Right side: dockable Data Explorer + Control Center ----------------
         self._data_tabs = QTabWidget()
+        self._data_tabs.setMinimumWidth(0)
+        self._data_tabs.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        self._data_tabs.tabBar().setUsesScrollButtons(False)
         self._table_widget = SWCTableWidget()
+        self._table_widget.setMinimumWidth(0)
+        self._table_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
 
         self._info_label = QLabel("No SWC file loaded.")
         self._info_label.setWordWrap(True)
@@ -224,6 +230,9 @@ class SWCMainWindow(QMainWindow):
         self._data_tabs.addTab(self._edit_log_text, "Edit Log")
 
         self._control_tabs = QTabWidget()
+        self._control_tabs.setMinimumWidth(0)
+        self._control_tabs.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        self._control_tabs.tabBar().hide()
         self._batch_tab = BatchTabWidget()
         self._batch_tab.batch_validation_ready.connect(self._on_batch_validation_ready)
         self._batch_tab.precheck_requested.connect(self._on_precheck_requested)
@@ -263,9 +272,9 @@ class SWCMainWindow(QMainWindow):
             | QDockWidget.DockWidgetClosable
         )
         self._data_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self._data_dock.setMinimumWidth(120)
+        self._data_dock.setMinimumWidth(24)
         self._data_dock.setWidget(self._data_tabs)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._data_dock)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._data_dock)
 
         self._control_dock = QDockWidget("Control Center", self)
         self._control_dock.setObjectName("ControlCenterDock")
@@ -275,10 +284,9 @@ class SWCMainWindow(QMainWindow):
             | QDockWidget.DockWidgetClosable
         )
         self._control_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self._control_dock.setMinimumWidth(140)
+        self._control_dock.setMinimumWidth(24)
         self._control_dock.setWidget(self._control_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
-        self.splitDockWidget(self._data_dock, self._control_dock, Qt.Vertical)
 
         self._precheck_dock = QDockWidget("Rule Guide", self)
         self._precheck_dock.setObjectName("ValidationPrecheckDock")
@@ -326,7 +334,7 @@ class SWCMainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(6, 6, 6, 0)
         root.setSpacing(6)
-        root.addWidget(self._top_tabs, stretch=0)
+        root.addWidget(self._top_bar, stretch=0)
         root.addWidget(self._canvas_stack, stretch=1)
         root.addWidget(self._log_console, stretch=0)
         self.setCentralWidget(central)
@@ -343,39 +351,25 @@ class SWCMainWindow(QMainWindow):
         self._reset_layout()
         self._append_log("UI initialized. Open SWC files from File menu.", "INFO")
 
-    def _build_top_tabs(self) -> QTabWidget:
+    def _build_top_bar(self) -> QWidget:
         top_bg = "#f2f2f2"
         top_fg = "#222222"
         top_border = "#c7c7c7"
         top_hover = "#e9e9e9"
-        tabs = QTabWidget()
-        tabs.setDocumentMode(True)
-        tabs.setElideMode(Qt.ElideRight)
-        tabs.setStyleSheet(
-            "QTabWidget::pane {"
-            f"  border: 1px solid {top_border}; background: {top_bg};"
-            "}"
-            "QTabBar::tab {"
-            f"  padding: 6px 16px; font-weight: 600; color: {top_fg};"
+
+        panel = QFrame()
+        panel.setFrameShape(QFrame.StyledPanel)
+        panel.setStyleSheet(
+            "QFrame {"
             f"  background: {top_bg}; border: 1px solid {top_border};"
-            "  border-bottom: none; margin-right: 1px;"
-            "}"
-            "QTabBar::tab:selected {"
-            f"  background: {top_bg};"
-            "}"
-            "QTabBar::tab:hover {"
-            f"  background: {top_hover};"
             "}"
         )
 
-        # Home tab: classic dropdown menus.
-        home_page = QWidget()
-        home_page.setStyleSheet(f"background: {top_bg};")
-        home_layout = QVBoxLayout(home_page)
-        home_layout.setContentsMargins(0, 0, 0, 0)
-        home_layout.setSpacing(0)
+        root = QVBoxLayout(panel)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(6)
 
-        self._home_menu_bar = QMenuBar(home_page)
+        self._home_menu_bar = QMenuBar(panel)
         self._home_menu_bar.setNativeMenuBar(False)
         self._home_menu_bar.setStyleSheet(
             "QMenuBar {"
@@ -398,68 +392,96 @@ class SWCMainWindow(QMainWindow):
             "}"
         )
         self._populate_home_menus(self._home_menu_bar)
-        home_layout.addWidget(self._home_menu_bar, stretch=0)
+        root.addWidget(self._home_menu_bar, stretch=0)
 
-        # Tools tab: feature buttons.
-        tools_page = QWidget()
-        tools_page.setStyleSheet(
-            "QWidget {"
-            f"  background: {top_bg}; color: {top_fg};"
+        group = QGroupBox("Tools")
+        group.setStyleSheet(
+            "QGroupBox { border: 1px solid #d0d0d0; margin-top: 6px; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #444; }"
+            "QPushButton#toolMenuItem {"
+            "  background: transparent; color: #222; border: none;"
+            "  padding: 6px 12px; text-align: left;"
             "}"
-            "QPushButton {"
+            "QPushButton#toolMenuItem:hover {"
+            "  background: #e9e9e9; border-radius: 3px;"
+            "}"
+            "QPushButton#toolMenuItem:checked {"
+            "  background: #d7e8f8; border: 1px solid #7ea8cf; border-radius: 3px; font-weight: 700;"
+            "}"
+            "QPushButton#featureBtn {"
             f"  background: {top_bg}; color: {top_fg}; border: 1px solid {top_border};"
             "  border-radius: 4px; padding: 6px 10px;"
             "}"
-            "QPushButton:hover {"
+            "QPushButton#featureBtn:hover {"
             f"  background: {top_hover};"
             "}"
-            "QPushButton:pressed {"
-            f"  background: {top_hover};"
+            "QPushButton#featureBtn:checked {"
+            "  background: #d7e8f8; border: 1px solid #7ea8cf; font-weight: 700;"
             "}"
         )
-        tools_layout = QHBoxLayout(tools_page)
-        tools_layout.setContentsMargins(8, 6, 8, 6)
-        tools_layout.setSpacing(8)
+        group_layout = QVBoxLayout(group)
+        group_layout.setContentsMargins(8, 10, 8, 8)
+        group_layout.setSpacing(6)
 
-        b_batch = QPushButton("Batch Processing")
-        b_batch.clicked.connect(lambda: self._activate_feature("batch"))
-        tools_layout.addWidget(b_batch)
+        tools_row = QHBoxLayout()
+        tools_row.setContentsMargins(0, 0, 0, 0)
+        tools_row.setSpacing(8)
 
-        b_validation = QPushButton("Validation")
-        b_validation.clicked.connect(lambda: self._activate_feature("validation"))
-        tools_layout.addWidget(b_validation)
+        tool_defs = [
+            ("Batch Processing", "batch"),
+            ("Validation", "validation"),
+            ("Visualization", "visualization"),
+            ("Morphology Editing", "morphology_editing"),
+            ("Atlas Registration", "atlas_registration"),
+            ("Analysis", "analysis"),
+        ]
 
-        b_visual = QPushButton("Visualization")
-        b_visual.clicked.connect(lambda: self._activate_feature("visualization"))
-        tools_layout.addWidget(b_visual)
+        fm = QFontMetrics(self.font())
+        self._tool_menu_buttons: dict[str, QPushButton] = {}
+        for label, key in tool_defs:
+            btn = QPushButton(label)
+            btn.setObjectName("toolMenuItem")
+            btn.setCheckable(True)
+            btn.setFlat(True)
+            btn.setMinimumWidth(fm.horizontalAdvance(label) + 26)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, k=key: self._activate_feature(k))
+            btn.setProperty("tool_key", key)
+            btn.installEventFilter(self)
+            tools_row.addWidget(btn)
+            self._tool_menu_buttons[key] = btn
+        tools_row.addStretch()
+        group_layout.addLayout(tools_row)
 
-        b_morph = QPushButton("Morphology Editing")
-        b_morph.clicked.connect(lambda: self._activate_feature("morphology_editing"))
-        tools_layout.addWidget(b_morph)
+        self._feature_strip = QWidget()
+        self._feature_strip.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._feature_row = QHBoxLayout(self._feature_strip)
+        self._feature_row.setContentsMargins(0, 0, 0, 0)
+        self._feature_row.setSpacing(6)
+        self._feature_row.addStretch()
+        group_layout.addWidget(self._feature_strip)
 
-        b_atlas = QPushButton("Atlas Registration")
-        b_atlas.clicked.connect(lambda: self._activate_feature("atlas_registration"))
-        tools_layout.addWidget(b_atlas)
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(10)
 
-        b_analysis = QPushButton("Analysis")
-        b_analysis.clicked.connect(lambda: self._activate_feature("analysis"))
-        tools_layout.addWidget(b_analysis)
+        # Keep for backward compatibility with existing update calls, but hide from UI.
+        self._feature_label = QLabel("")
+        self._feature_label.setVisible(False)
 
-        tools_layout.addStretch()
-        self._feature_label = QLabel("Active feature: None")
-        self._feature_label.setStyleSheet("font-size: 12px; color: #555;")
-        tools_layout.addWidget(self._feature_label)
         self._current_file_label = QLabel("Current file: (none)")
         self._current_file_label.setStyleSheet("font-size: 12px; color: #555;")
         self._current_file_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self._current_file_label.setMinimumWidth(0)
-        self._current_file_label.setMaximumWidth(320)
-        tools_layout.addWidget(self._current_file_label)
+        self._current_file_label.setMaximumWidth(360)
+        status_row.addWidget(self._current_file_label)
         self._set_current_file_label_text("")
 
-        tabs.addTab(home_page, "Home")
-        tabs.addTab(tools_page, "Tools")
-        return tabs
+        status_row.addStretch()
+        group_layout.addLayout(status_row)
+
+        root.addWidget(group)
+        return panel
 
     def _populate_home_menus(self, menu: QMenuBar):
         menu.clear()
@@ -628,13 +650,114 @@ class SWCMainWindow(QMainWindow):
         self.setStatusBar(self._status)
         self._status.showMessage("Ready — open an SWC file to start.")
 
+    def _clear_feature_row(self):
+        while self._feature_row.count() > 0:
+            item = self._feature_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _tool_feature_labels(self, tool_key: str | None = None) -> list[str]:
+        key = str(tool_key if tool_key is not None else (self._active_tool or "")).strip().lower()
+        mapping = {
+            "batch": ["Split", "Validation", "Auto Label", "Radii Cleaning"],
+            "validation": ["Validation", "Auto Label", "Radii Cleaning"],
+            "visualization": ["View Controls"],
+            "morphology_editing": ["Label Editing", "Simplification"],
+            "dendrogram": ["Label Editing", "Simplification"],
+            "atlas_registration": ["Registration"],
+            "analysis": ["Summary"],
+        }
+        return list(mapping.get(key, []))
+
+    def _refresh_top_feature_buttons(self):
+        self._clear_feature_row()
+        self._top_feature_buttons: list[QPushButton] = []
+
+        labels = self._tool_feature_labels()
+        if not labels:
+            self._feature_row.addStretch()
+            return
+
+        fm = QFontMetrics(self.font())
+        max_feature_w = max(fm.horizontalAdvance(lb) for lb in labels) + 34
+        for label in labels:
+            btn = QPushButton(label)
+            btn.setObjectName("featureBtn")
+            btn.setCheckable(True)
+            btn.setMinimumWidth(max_feature_w)
+            btn.clicked.connect(lambda _=False, lb=label: self._on_top_feature_button_clicked(lb))
+            self._feature_row.addWidget(btn)
+            self._top_feature_buttons.append(btn)
+
+        self._feature_row.addStretch()
+        self._sync_top_feature_button_selection()
+
+    def _sync_top_feature_button_selection(self):
+        buttons = getattr(self, "_top_feature_buttons", None)
+        if not buttons:
+            return
+
+        active_label = ""
+        idx = self._control_tabs.currentIndex()
+        if idx >= 0:
+            active_label = (self._control_tabs.tabText(idx) or "").strip().lower()
+
+        for btn in buttons:
+            btn.setChecked(bool(active_label) and btn.text().strip().lower() == active_label)
+
+    def _sync_tool_tab_selection(self):
+        buttons = getattr(self, "_tool_menu_buttons", None)
+        if not buttons:
+            return
+        for key, btn in buttons.items():
+            btn.setChecked(key == (self._active_tool or ""))
+
+    def eventFilter(self, watched, event):
+        try:
+            buttons = getattr(self, "_tool_menu_buttons", {})
+            if watched in buttons.values() and event.type() == QEvent.Enter:
+                key = str(watched.property("tool_key") or "").strip().lower()
+                if key and key != (self._active_tool or ""):
+                    self._activate_feature(key)
+        except Exception:
+            pass
+        return super().eventFilter(watched, event)
+
+    def _on_top_feature_button_clicked(self, label: str):
+        target = str(label or "").strip().lower()
+        if not target:
+            return
+
+        # Keep button highlight even when no SWC/control tab is currently available.
+        for btn in getattr(self, "_top_feature_buttons", []):
+            btn.setChecked(btn.text().strip().lower() == target)
+
+        for i in range(self._control_tabs.count()):
+            if (self._control_tabs.tabText(i) or "").strip().lower() == target:
+                self._control_tabs.setCurrentIndex(i)
+                return
+
+        if self._active_tool in ("morphology_editing", "dendrogram") and self._active_document() is None:
+            self._append_log("Open an SWC file to use morphology feature controls.", "INFO")
+
     def _wrap_control_widget(self, inner: QWidget) -> QWidget:
         area = QScrollArea()
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.NoFrame)
         area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        area.setWidget(inner)
+        area.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        area.setMinimumWidth(0)
+
+        host = QWidget()
+        lay = QVBoxLayout(host)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(inner)
+        lay.addStretch(1)
+
+        area.setWidget(host)
         return area
 
     # --------------------------------------------------------- Document helpers
@@ -1387,7 +1510,10 @@ class SWCMainWindow(QMainWindow):
         while self._control_tabs.count() > 0:
             self._control_tabs.removeTab(0)
 
+        current_idx = -1
+
         if key in ("", "none"):
+            self._refresh_top_feature_buttons()
             return
 
         if key == "batch":
@@ -1395,41 +1521,37 @@ class SWCMainWindow(QMainWindow):
             self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.validation_tab_widget()), "Validation")
             self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.auto_tab_widget()), "Auto Label")
             self._control_tabs.addTab(self._wrap_control_widget(self._batch_tab.radii_tab_widget()), "Radii Cleaning")
-            self._control_tabs.setCurrentIndex(0)
-            self._on_control_tab_changed(self._control_tabs.currentIndex())
-            return
-
-        if key == "validation":
+            current_idx = 0
+        elif key == "validation":
             self._control_tabs.addTab(self._wrap_control_widget(self._validation_tab), "Validation")
             self._control_tabs.addTab(self._wrap_control_widget(self._validation_auto_label_panel), "Auto Label")
             self._control_tabs.addTab(self._wrap_control_widget(self._validation_radii_panel), "Radii Cleaning")
-            self._control_tabs.setCurrentIndex(0)
-            self._on_control_tab_changed(self._control_tabs.currentIndex())
-            return
-
-        if key in ("morphology_editing", "dendrogram"):
+            current_idx = 0
+        elif key in ("morphology_editing", "dendrogram"):
             doc = self._active_document()
             if doc is None:
-                self._on_control_tab_changed(self._control_tabs.currentIndex())
+                self._refresh_top_feature_buttons()
+                self._on_control_tab_changed(-1)
                 return
             self._control_tabs.addTab(self._wrap_control_widget(doc.controls), "Label Editing")
             self._control_tabs.addTab(self._wrap_control_widget(self._simplification_panel), "Simplification")
-            if previous_label == "simplification":
-                self._control_tabs.setCurrentIndex(1)
-            else:
-                self._control_tabs.setCurrentIndex(0)
+            current_idx = 1 if previous_label == "simplification" else 0
             self._refresh_simplification_panel_state()
-            self._on_control_tab_changed(self._control_tabs.currentIndex())
-            return
+        elif key in ("atlas_registration", "analysis"):
+            current_idx = -1
+        else:
+            # default: visualization
+            self._control_tabs.addTab(self._wrap_control_widget(self._viz_control), "View Controls")
+            current_idx = 0
 
-        if key in ("atlas_registration", "analysis"):
+        if self._control_tabs.count() > 0:
+            current_idx = max(0, min(current_idx, self._control_tabs.count() - 1))
+            self._control_tabs.setCurrentIndex(current_idx)
             self._on_control_tab_changed(self._control_tabs.currentIndex())
-            return
+        else:
+            self._on_control_tab_changed(-1)
 
-        # default: visualization
-        self._control_tabs.addTab(self._wrap_control_widget(self._viz_control), "View Controls")
-        self._control_tabs.setCurrentIndex(0)
-        self._on_control_tab_changed(self._control_tabs.currentIndex())
+        self._refresh_top_feature_buttons()
 
     # --------------------------------------------------------- Feature routing
     def _activate_feature(self, name: str):
@@ -1444,6 +1566,7 @@ class SWCMainWindow(QMainWindow):
             return
         if key == "batch":
             self._active_tool = "batch"
+            self._sync_tool_tab_selection()
             self._set_control_tabs_for_feature("batch")
             self._control_dock.show()
             self._on_control_tab_changed(self._control_tabs.currentIndex())
@@ -1452,6 +1575,7 @@ class SWCMainWindow(QMainWindow):
             return
         if key == "validation":
             self._active_tool = "validation"
+            self._sync_tool_tab_selection()
             self._set_control_tabs_for_feature("validation")
             self._control_dock.show()
             self._precheck_dock.hide()
@@ -1463,6 +1587,7 @@ class SWCMainWindow(QMainWindow):
             return
         if key == "visualization":
             self._active_tool = "visualization"
+            self._sync_tool_tab_selection()
             self._set_control_tabs_for_feature("visualization")
             self._control_dock.show()
             self._precheck_dock.hide()
@@ -1474,6 +1599,7 @@ class SWCMainWindow(QMainWindow):
             return
         if key in ("morphology_editing", "dendrogram"):
             self._active_tool = "morphology_editing"
+            self._sync_tool_tab_selection()
             self._set_control_tabs_for_feature("morphology_editing")
             self._control_dock.show()
             self._precheck_dock.hide()
@@ -1485,6 +1611,7 @@ class SWCMainWindow(QMainWindow):
             return
         if key == "atlas_registration":
             self._active_tool = "atlas_registration"
+            self._sync_tool_tab_selection()
             self._set_control_tabs_for_feature("atlas_registration")
             self._control_dock.show()
             self._precheck_dock.hide()
@@ -1496,6 +1623,7 @@ class SWCMainWindow(QMainWindow):
             return
         if key == "analysis":
             self._active_tool = "analysis"
+            self._sync_tool_tab_selection()
             self._set_control_tabs_for_feature("analysis")
             self._control_dock.show()
             self._precheck_dock.hide()
@@ -1507,6 +1635,7 @@ class SWCMainWindow(QMainWindow):
             return
 
         self._active_tool = ""
+        self._sync_tool_tab_selection()
         self._set_control_tabs_for_feature("")
         self._precheck_dock.hide()
         self._auto_guide_dock.hide()
@@ -1578,7 +1707,7 @@ class SWCMainWindow(QMainWindow):
 
             self._update_recent_files(path)
             self._apply_editor_modes()
-            self._sync_from_active_document(auto_run_validation=True)
+            self._sync_from_active_document(auto_run_validation=(self._active_tool == "validation"))
             if self._active_tool in ("morphology_editing", "dendrogram"):
                 self._set_control_tabs_for_feature("morphology_editing")
 
@@ -1827,13 +1956,11 @@ class SWCMainWindow(QMainWindow):
         self._control_dock.show()
         self._precheck_dock.hide()
         self._auto_guide_dock.hide()
-        # Don't force exact dock sizes here; allow users to drag boundaries.
         try:
-            # Enable animated/interactive docks so the sash is draggable.
             self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowNestedDocks | QMainWindow.AllowTabbedDocks)
-            # Set a practical default width so canvas keeps most space while right panel remains usable.
-            self.resizeDocks([self._data_dock], [340], Qt.Horizontal)
-            self.resizeDocks([self._data_dock, self._control_dock], [1, 1], Qt.Vertical)
+            self.addDockWidget(Qt.LeftDockWidgetArea, self._data_dock)
+            self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
+            self.resizeDocks([self._data_dock, self._control_dock], [40, 320], Qt.Horizontal)
         except Exception:
             pass
         self._append_log("Layout reset (docks movable).", "INFO")
@@ -1910,11 +2037,14 @@ class SWCMainWindow(QMainWindow):
     def _on_control_tab_changed(self, _index: int):
         # Do not auto-popup guide docks on tab/tool switches.
         # Guides are opened only by explicit user actions.
-        self._auto_guide_dock.hide()
-        self._precheck_dock.hide()
+        if hasattr(self, "_auto_guide_dock"):
+            self._auto_guide_dock.hide()
+        if hasattr(self, "_precheck_dock"):
+            self._precheck_dock.hide()
         if self._active_tool in ("morphology_editing", "dendrogram"):
             self._refresh_simplification_panel_state()
         self._refresh_canvas_surface()
+        self._sync_top_feature_button_selection()
 
     def _on_precheck_requested(self):
         self._show_precheck_floating()
@@ -1965,9 +2095,8 @@ class SWCMainWindow(QMainWindow):
     def _show_quick_manual(self):
         text = (
             "Quick Manual:\n"
-            "1) Top tab 'Home': File/Edit/View/Window/Help dropdown menus.\n"
-            "2) Top tab 'Tools': Batch Processing, Validation, Visualization, Morphology Editing, "
-            "Atlas Registration, Analysis buttons.\n"
+            "1) Top menu row: File/Edit/View/Window/Help dropdown menus.\n"
+            "2) Tools bar: choose a tool, then choose its feature row under it.\n"
             "3) Data Explorer and Control Center are dock windows (close, float, resize, move).\n"
             "4) You can open multiple SWC files as canvas tabs.\n"
             "5) Drag a canvas tab outside the tab bar to detach it into a floating window.\n"

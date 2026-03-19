@@ -74,8 +74,8 @@ class _SWCTableModel(QAbstractTableModel):
 class SWCTableWidget(QWidget):
     """Encapsulates a collapsible SWC table panel."""
 
-    EXPANDED_MIN_WIDTH = 220
-    COLLAPSED_WIDTH = 72
+    EXPANDED_MIN_WIDTH = 80
+    COLLAPSED_WIDTH = 20
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -166,7 +166,7 @@ class SWCTableWidget(QWidget):
 
     def _apply_panel_mode(self):
         if self._is_collapsed:
-            self.setMinimumWidth(120)
+            self.setMinimumWidth(self.COLLAPSED_WIDTH)
             self.setMaximumWidth(16777215)
             self._title.setVisible(True)
             self._title.setText(f"{self._filename}")

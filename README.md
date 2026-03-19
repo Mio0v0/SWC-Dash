@@ -79,8 +79,35 @@ swctools plugins list-loaded
 
 ## Documentation
 
-- [CLI Reference](docs/CLI_REFERENCE.md): full command reference and options
-- [API / Library Documentation](docs/API_DOCUMENTATION.md): Python API surface and feature entry points
+Short docs (Markdown):
+
+- [CLI Reference](docs/CLI_REFERENCE.md): command reference and options
+- [API / Library Documentation](docs/API_DOCUMENTATION.md): Python API surface
+- [Plugin Demonstration](docs/PLUGIN_DEMONSTRATION.md): lab handoff plugin workflow
+
+Comprehensive docs site (Sphinx source):
+
+- main entry: `docs/index.rst`
+- includes tutorials, architecture, logs/reporting, plugin development, and auto-generated API/module references
+
+Build docs locally:
+
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -b html docs docs/_build/html
+```
+
+Open local built site:
+
+```bash
+open docs/_build/html/index.html
+```
+
+Online docs for first-time users (GitHub Pages):
+
+- workflow file: `.github/workflows/docs.yml`
+- expected URL: `https://<github-user-or-org>.github.io/<repo-name>/`
+- first-time setup in repo settings: `Settings -> Pages -> Build and deployment -> Source: GitHub Actions`
 
 ## Architecture (High-Level)
 
