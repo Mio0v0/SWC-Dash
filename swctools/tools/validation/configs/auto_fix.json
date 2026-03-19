@@ -1,0 +1,8 @@
+{
+  "feature": "auto_fix",
+  "enabled": true,
+  "method": "default",
+  "fixes": {
+    "sanitize_invalid_types": true
+  }
+}

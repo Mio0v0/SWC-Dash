@@ -1,0 +1,6 @@
+{
+  "feature": "radii_cleaning",
+  "enabled": true,
+  "method": "shared",
+  "config_overrides": {}
+}

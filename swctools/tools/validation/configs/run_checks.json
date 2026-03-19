@@ -1,0 +1,5 @@
+{
+  "feature": "run_checks",
+  "enabled": true,
+  "method": "default"
+}

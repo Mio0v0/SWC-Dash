@@ -1,0 +1,8 @@
+{
+  "feature": "mesh_editing",
+  "enabled": true,
+  "method": "default",
+  "output": {
+    "include_edges": false
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "feature": "split",
+  "enabled": true,
+  "method": "default",
+  "notes": "Legacy alias config. Use swc_splitter.json for new settings."
+}
