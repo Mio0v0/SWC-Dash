@@ -106,7 +106,7 @@ open docs/_build/html/index.html
 Online docs for first-time users (GitHub Pages):
 
 - workflow file: `.github/workflows/docs.yml`
-- expected URL: `https://<github-user-or-org>.github.io/<repo-name>/`
+- live URL: `https://mio0v0.github.io/SWC-Dash/`
 - first-time setup in repo settings: `Settings -> Pages -> Build and deployment -> Source: GitHub Actions`
 
 ## Architecture (High-Level)
@@ -134,6 +134,10 @@ Examples:
 - JSON controls parameters and method selection.
 - Algorithm/data transformation logic stays in Python.
 - No web/server/API service layer is included.
+
+## License
+
+This project is released under the MIT License. See `LICENSE`.
 
 ## Plugin Contract (For Many External Plugins)
 

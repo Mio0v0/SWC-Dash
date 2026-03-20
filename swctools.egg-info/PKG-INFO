@@ -6,6 +6,7 @@ Author: SWC-Dash Contributors
 License: MIT
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: numpy>=1.24
 Requires-Dist: pandas>=2.0
 Requires-Dist: morphio>=3.3
@@ -14,6 +15,7 @@ Provides-Extra: gui
 Requires-Dist: PySide6>=6.6; extra == "gui"
 Requires-Dist: pyqtgraph>=0.14; extra == "gui"
 Requires-Dist: vispy>=0.14; extra == "gui"
+Dynamic: license-file
 
 # swctools
 
@@ -96,8 +98,35 @@ swctools plugins list-loaded
 
 ## Documentation
 
-- [CLI Reference](docs/CLI_REFERENCE.md): full command reference and options
-- [API / Library Documentation](docs/API_DOCUMENTATION.md): Python API surface and feature entry points
+Short docs (Markdown):
+
+- [CLI Reference](docs/CLI_REFERENCE.md): command reference and options
+- [API / Library Documentation](docs/API_DOCUMENTATION.md): Python API surface
+- [Plugin Demonstration](docs/PLUGIN_DEMONSTRATION.md): lab handoff plugin workflow
+
+Comprehensive docs site (Sphinx source):
+
+- main entry: `docs/index.rst`
+- includes tutorials, architecture, logs/reporting, plugin development, and auto-generated API/module references
+
+Build docs locally:
+
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -b html docs docs/_build/html
+```
+
+Open local built site:
+
+```bash
+open docs/_build/html/index.html
+```
+
+Online docs for first-time users (GitHub Pages):
+
+- workflow file: `.github/workflows/docs.yml`
+- live URL: `https://mio0v0.github.io/SWC-Dash/`
+- first-time setup in repo settings: `Settings -> Pages -> Build and deployment -> Source: GitHub Actions`
 
 ## Architecture (High-Level)
 
@@ -125,6 +154,10 @@ Examples:
 - Algorithm/data transformation logic stays in Python.
 - No web/server/API service layer is included.
 
+## License
+
+This project is released under the MIT License. See `LICENSE`.
+
 ## Plugin Contract (For Many External Plugins)
 
 `swctools` supports plugin modules through a small versioned contract:
@@ -141,3 +174,13 @@ Examples:
 
 This lets you integrate external libraries (like BrainGlobe adapters) without
 rewriting their internal algorithms.
+
+For automatic plugin loading in CLI sessions:
+
+```bash
+export SWCTOOLS_PLUGINS="my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_methods"
+```
+
+Starter template:
+
+- `examples/plugins/brainglobe_adapter_template.py`

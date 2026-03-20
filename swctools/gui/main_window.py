@@ -148,6 +148,7 @@ class SWCMainWindow(QMainWindow):
         self._active_tool: str = ""
         self._documents: dict[EditorTab, _DocumentState] = {}
         self._detached_windows: dict[EditorTab, _DetachedEditorWindow] = {}
+        self._control_wrappers: dict[int, QScrollArea] = {}
         self._simplify_preview_by_source: dict[EditorTab, EditorTab] = {}
         self._simplify_source_by_preview: dict[EditorTab, EditorTab] = {}
         self._simplify_result_by_preview: dict[EditorTab, dict] = {}
@@ -742,6 +743,11 @@ class SWCMainWindow(QMainWindow):
             self._append_log("Open an SWC file to use morphology feature controls.", "INFO")
 
     def _wrap_control_widget(self, inner: QWidget) -> QWidget:
+        key = id(inner)
+        existing = self._control_wrappers.get(key)
+        if existing is not None:
+            return existing
+
         area = QScrollArea()
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.NoFrame)
@@ -752,12 +758,13 @@ class SWCMainWindow(QMainWindow):
 
         host = QWidget()
         lay = QVBoxLayout(host)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(0)
+        lay.setAlignment(Qt.AlignTop)
         lay.addWidget(inner)
-        lay.addStretch(1)
 
         area.setWidget(host)
+        self._control_wrappers[key] = area
         return area
 
     # --------------------------------------------------------- Document helpers

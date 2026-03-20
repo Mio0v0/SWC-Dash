@@ -42,7 +42,7 @@ The new file is your plugin module name (`my_lab_plugin`).
 ### 1) Open project and activate environment
 
 ```bash
-cd /Users/tuo/Desktop/SWC-Studio
+cd <repo-root>
 source .venv/bin/activate
 ```
 
