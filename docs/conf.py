@@ -1,4 +1,4 @@
-"""Sphinx configuration for swctools documentation."""
+"""Sphinx configuration for SWC-Studio documentation."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ DOCS_DIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(DOCS_DIR, ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-project = "swctools"
-author = "SWC-Dash Contributors"
+project = "SWC-Studio"
+author = "SWC-Studio Contributors"
 copyright = f"{datetime.now():%Y}, {author}"
 
 try:
@@ -65,7 +65,7 @@ templates_path = ["_templates"] if os.path.isdir(os.path.join(DOCS_DIR, "_templa
 html_static_path = ["_static"] if os.path.isdir(os.path.join(DOCS_DIR, "_static")) else []
 
 html_theme = "pydata_sphinx_theme"
-html_title = f"swctools {release}"
+html_title = f"SWC-Studio {release}"
 html_theme_options = {
     "navigation_with_keys": True,
     "show_toc_level": 2,

@@ -1,4 +1,4 @@
-"""Convenience launcher for the SWC Qt GUI.
+"""Convenience launcher for the SWC-Studio Qt GUI.
 Run from repo root with the project's venv active:
 
   source .venv/bin/activate

@@ -1,11 +1,11 @@
 # Plugin Demonstration Guide
 
-This is a step-by-step handoff guide for lab members to add a plugin to SWC-Tools and run it from the same app/CLI workflow.
+This is a step-by-step handoff guide for lab members to add a plugin to SWC-Studio and run it from the same app/CLI workflow.
 
 ## What This Demonstration Covers
 
 1. Create a plugin file.
-2. Load plugin into SWC-Tools.
+2. Load plugin into SWC-Studio.
 3. Verify plugin is registered.
 4. Run a built-in feature using plugin method selection.
 5. Reuse the same plugin setup in future runs.
@@ -22,7 +22,7 @@ Inside `register_plugin`, bind your function to a feature key and method name:
 ```python
 def register_plugin(registrar):
     registrar.register_method(
-        "atlas_registration.registration",  # feature key in SWC-Tools
+        "atlas_registration.registration",  # feature key in SWC-Studio
         "brainglobe",                       # method name users select
         my_callable,                        # Python callable
     )

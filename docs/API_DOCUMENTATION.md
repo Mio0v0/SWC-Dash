@@ -1,6 +1,6 @@
 # API Documentation (Library Reference)
 
-This document covers Python-callable APIs in `swctools`.
+This document covers Python-callable APIs in SWC-Studio (Python package: `swctools`).
 
 ## How To Read This Doc
 

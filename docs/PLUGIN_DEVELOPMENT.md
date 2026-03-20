@@ -90,4 +90,4 @@ For third-party tools (example: BrainGlobe CLI wrappers):
 - plugin method calls external command/library
 - plugin method maps output back into swctools result payload
 
-This pattern avoids rewriting third-party algorithms while still integrating into SWC-Tools workflows.
+This pattern avoids rewriting third-party algorithms while still integrating into SWC-Studio workflows.

@@ -1,6 +1,6 @@
-# swctools
+# SWC-Studio
 
-`swctools` is a modular SWC morphology toolkit with:
+`SWC-Studio` is a modular SWC morphology toolkit (Python package: `swctools`) with:
 
 - a shared Python backend (`swctools/core` + `swctools/tools`)
 - a CLI (`swctools`)
@@ -87,27 +87,9 @@ Short docs (Markdown):
 
 Comprehensive docs site (Sphinx source):
 
-- main entry: `docs/index.rst`
+- Live docs: `https://mio0v0.github.io/SWC-Studio/`
 - includes tutorials, architecture, logs/reporting, plugin development, and auto-generated API/module references
 
-Build docs locally:
-
-```bash
-pip install -r docs/requirements.txt
-sphinx-build -b html docs docs/_build/html
-```
-
-Open local built site:
-
-```bash
-open docs/_build/html/index.html
-```
-
-Online docs for first-time users (GitHub Pages):
-
-- workflow file: `.github/workflows/docs.yml`
-- live URL: `https://mio0v0.github.io/SWC-Dash/`
-- first-time setup in repo settings: `Settings -> Pages -> Build and deployment -> Source: GitHub Actions`
 
 ## Architecture (High-Level)
 

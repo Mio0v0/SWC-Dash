@@ -1,6 +1,6 @@
 # CLI Reference
 
-This is the complete command reference for the `swctools` CLI.
+This is the complete command reference for the SWC-Studio CLI (command: `swctools`).
 
 ## Install and Verify
 
