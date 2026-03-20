@@ -1,30 +1,66 @@
-# Virtual environments
-.venv/
-venv/
-
-# PyInstaller build folders
-build/
-dist/
-
-# PyInstaller spec file
-*.spec
-
-# Byte-compiled / cached files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# macOS system files
+# ----------------------------
+# OS / editor files
+# ----------------------------
 .DS_Store
-
-# IDE/project files (optional but recommended)
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
-# Logs and temporary
-*.log
-.DS_Store
-/.agents
+# ----------------------------
+# Python bytecode / caches
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.nox/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# ----------------------------
+# Virtual environments
+# ----------------------------
+.venv/
+venv/
+env/
+
+# ----------------------------
+# Build / packaging artifacts
+# ----------------------------
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+*.spec
+
+# ----------------------------
+# Sphinx docs build
+# ----------------------------
+docs/_build/
+
+# ----------------------------
+# Local tool/agent workspace
+# ----------------------------
+.agents/
 swctools/gui/NEW_SWC/
 swctools/gui/__error_log__.txt
+
+# ----------------------------
+# Runtime logs and generated reports
+# ----------------------------
+*.log
+*_validation_report.txt
+*_radii_cleaning_report.txt
+*_simplification_log.txt
+*_bg_projection_report.json
+
+# Generated batch output folders
+*_auto_typing/
+*_split/
+*_radii_cleaned/
