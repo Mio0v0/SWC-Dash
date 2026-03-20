@@ -5,8 +5,8 @@ This guide gets a first-time user from clone to usable CLI, GUI, and local docs.
 ## 1. Clone and enter project
 
 ```bash
-git clone <your-repo-url> SWC-Studio
-cd SWC-Studio
+git clone <your-repo-url>
+cd <repo-folder-name>
 ```
 
 ## 2. Create environment and install
