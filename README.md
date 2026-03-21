@@ -30,6 +30,28 @@ Core workflows currently include:
 
 ## Install
 
+## Prerequisites
+
+- Python 3.10+ (Windows strongly recommended: Python 3.11)
+- `pip` (bundled with modern Python)
+- `git` (to clone the repository)
+- Optional: `conda`/`mamba` if you prefer conda environments
+
+## Install Method Notes
+
+- `pip install -e ".[gui]"` installs this repo in editable mode + GUI extras. This is best while developing or testing local code changes.
+- `pip install -r requirements.txt` uses the single top-level requirements file (full setup: core + GUI + docs).
+- If you do not need editable mode, you can use `pip install ".[gui]"` instead.
+
+Using a virtual environment is highly recommended (venv or conda), but not required.
+You can install into a base interpreter if needed.
+
+Single top-level requirements file for full setup (core + GUI + docs):
+
+```bash
+pip install -r requirements.txt
+```
+
 macOS/Linux (GUI + CLI):
 
 ```bash
@@ -54,6 +76,16 @@ Windows cmd (GUI + CLI, stricter setup):
 ```bat
 py -3.11 -m venv .venv
 .venv\Scripts\activate.bat
+python -m pip install --upgrade pip setuptools wheel
+pip install --no-cache-dir -e ".[gui]"
+python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"
+```
+
+Conda (all OS, GUI + CLI):
+
+```bash
+conda create -n swc-studio python=3.11 -y
+conda activate swc-studio
 python -m pip install --upgrade pip setuptools wheel
 pip install --no-cache-dir -e ".[gui]"
 python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"

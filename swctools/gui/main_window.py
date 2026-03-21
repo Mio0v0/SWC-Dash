@@ -448,7 +448,6 @@ class SWCMainWindow(QMainWindow):
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda _=False, k=key: self._activate_feature(k))
             btn.setProperty("tool_key", key)
-            btn.installEventFilter(self)
             tools_row.addWidget(btn)
             self._tool_menu_buttons[key] = btn
         tools_row.addStretch()
@@ -715,14 +714,7 @@ class SWCMainWindow(QMainWindow):
             btn.setChecked(key == (self._active_tool or ""))
 
     def eventFilter(self, watched, event):
-        try:
-            buttons = getattr(self, "_tool_menu_buttons", {})
-            if watched in buttons.values() and event.type() == QEvent.Enter:
-                key = str(watched.property("tool_key") or "").strip().lower()
-                if key and key != (self._active_tool or ""):
-                    self._activate_feature(key)
-        except Exception:
-            pass
+        # Tool changes should happen on explicit click only.
         return super().eventFilter(watched, event)
 
     def _on_top_feature_button_clicked(self, label: str):

@@ -6,7 +6,7 @@ This folder stores Sphinx **source** documentation only.
 
 - `index.rst`: table of contents root
 - `conf.py`: Sphinx configuration
-- `requirements.txt`: docs build dependencies
+- `requirements.txt` (top-level): full project dependencies (core + GUI + docs)
 - `Makefile`: local build helper
 - `*.md` and `*.rst`: guide/reference source pages
 

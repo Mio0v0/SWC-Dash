@@ -149,7 +149,7 @@ Common examples:
 Install docs dependencies:
 
 ```bash
-pip install -r docs/requirements.txt
+pip install -e ".[docs]"
 ```
 
 Build HTML:
