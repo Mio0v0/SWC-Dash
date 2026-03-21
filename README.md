@@ -61,7 +61,6 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
 pip install --no-cache-dir -e ".[gui]"
-python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"
 ```
 
 Windows cmd (GUI + CLI, stricter setup):
@@ -71,7 +70,6 @@ py -3.11 -m venv .venv
 .venv\Scripts\activate.bat
 python -m pip install --upgrade pip setuptools wheel
 pip install --no-cache-dir -e ".[gui]"
-python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"
 ```
 
 Conda (all OS, GUI + CLI):
@@ -81,7 +79,6 @@ conda create -n swc-studio python=3.11 -y
 conda activate swc-studio
 python -m pip install --upgrade pip setuptools wheel
 pip install --no-cache-dir -e ".[gui]"
-python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"
 ```
 
 CLI-only install (all OS, with venv active):
