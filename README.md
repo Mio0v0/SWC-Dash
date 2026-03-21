@@ -39,18 +39,11 @@ Core workflows currently include:
 
 ## Install Method Notes
 
-- `pip install -e ".[gui]"` installs this repo in editable mode + GUI extras. This is best while developing or testing local code changes.
-- `pip install -r requirements.txt` uses the single top-level requirements file (full setup: core + GUI + docs).
-- If you do not need editable mode, you can use `pip install ".[gui]"` instead.
-
 Using a virtual environment is highly recommended (venv or conda), but not required.
 You can install into a base interpreter if needed.
 
 Single top-level requirements file for full setup (core + GUI + docs):
 
-```bash
-pip install -r requirements.txt
-```
 
 macOS/Linux (GUI + CLI):
 

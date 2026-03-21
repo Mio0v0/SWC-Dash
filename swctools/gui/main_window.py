@@ -1959,7 +1959,7 @@ class SWCMainWindow(QMainWindow):
             self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowNestedDocks | QMainWindow.AllowTabbedDocks)
             self.addDockWidget(Qt.LeftDockWidgetArea, self._data_dock)
             self.addDockWidget(Qt.RightDockWidgetArea, self._control_dock)
-            self.resizeDocks([self._data_dock, self._control_dock], [40, 320], Qt.Horizontal)
+            self.resizeDocks([self._data_dock, self._control_dock], [280, 280], Qt.Horizontal)
         except Exception:
             pass
         self._append_log("Layout reset (docks movable).", "INFO")
