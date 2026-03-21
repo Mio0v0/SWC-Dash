@@ -35,26 +35,28 @@ macOS/Linux (GUI + CLI):
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+python -m pip install --upgrade pip setuptools wheel
 pip install -e ".[gui]"
 ```
 
-Windows PowerShell (GUI + CLI):
+Windows PowerShell (GUI + CLI, stricter setup):
 
 ```powershell
-py -m venv .venv
+py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e ".[gui]"
+python -m pip install --upgrade pip setuptools wheel
+pip install --no-cache-dir -e ".[gui]"
+python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"
 ```
 
-Windows cmd (GUI + CLI):
+Windows cmd (GUI + CLI, stricter setup):
 
 ```bat
-py -m venv .venv
+py -3.11 -m venv .venv
 .venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-pip install -e ".[gui]"
+python -m pip install --upgrade pip setuptools wheel
+pip install --no-cache-dir -e ".[gui]"
+python -c "import h5py, morphio; print('ok', h5py.version.hdf5_version)"
 ```
 
 CLI-only install (all OS, with venv active):
