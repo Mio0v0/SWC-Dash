@@ -41,17 +41,47 @@ The new file is your plugin module name (`my_lab_plugin`).
 
 ### 1) Open project and activate environment
 
+macOS/Linux:
+
 ```bash
 cd <repo-root>
 source .venv/bin/activate
+```
+
+Windows PowerShell:
+
+```powershell
+cd <repo-root>
+.\.venv\Scripts\Activate.ps1
+```
+
+Windows cmd:
+
+```bat
+cd <repo-root>
+.venv\Scripts\activate.bat
 ```
 
 ### 2) Make plugin module importable
 
 If your plugin file is under `examples/plugins`:
 
+macOS/Linux:
+
 ```bash
 export PYTHONPATH="$PWD/examples/plugins"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:PYTHONPATH = "$PWD/examples/plugins"
+```
+
+Windows cmd:
+
+```bat
+set PYTHONPATH=%CD%\examples\plugins
 ```
 
 ### 3) Load plugin
@@ -81,8 +111,21 @@ You should see your method name in `plugin_methods`.
 Example:
 
 ```bash
-swctools atlas register ./data \
-  --config-json '{"method":"brainglobe","bg_command":".venv/bin/brainreg --help","append_input_path":false,"append_atlas_name":false}'
+swctools atlas register ./data --config-json '{"method":"brainglobe","bg_command":".venv/bin/brainreg --help","append_input_path":false,"append_atlas_name":false}'
+```
+
+Windows path examples for `bg_command`:
+
+PowerShell:
+
+```powershell
+swctools atlas register .\data --config-json '{"method":"brainglobe","bg_command":".venv\\Scripts\\brainreg.exe --help","append_input_path":false,"append_atlas_name":false}'
+```
+
+cmd:
+
+```bat
+swctools atlas register .\data --config-json "{\"method\":\"brainglobe\",\"bg_command\":\".venv\\Scripts\\brainreg.exe --help\",\"append_input_path\":false,\"append_atlas_name\":false}"
 ```
 
 The `method` value must exactly match the name used in `register_method(...)`.
@@ -91,16 +134,22 @@ The `method` value must exactly match the name used in `register_method(...)`.
 
 `swctools plugins load ...` is process-scoped. To auto-load every run:
 
+macOS/Linux:
+
 ```bash
 export SWCTOOLS_PLUGINS="my_lab_plugin"
 ```
 
-Use with `PYTHONPATH` in one line:
+Windows PowerShell:
 
-```bash
-PYTHONPATH="$PWD/examples/plugins" \
-SWCTOOLS_PLUGINS="my_lab_plugin" \
-swctools plugins list-loaded
+```powershell
+$env:SWCTOOLS_PLUGINS = "my_lab_plugin"
+```
+
+Windows cmd:
+
+```bat
+set SWCTOOLS_PLUGINS=my_lab_plugin
 ```
 
 ## Common Errors and Fixes
@@ -120,7 +169,7 @@ swctools plugins list-loaded
 ### External command fails (for wrappers like BrainGlobe CLI)
 
 - Cause: command not available in current env.
-- Fix: run command directly first (example: `.venv/bin/brainreg --help`), then use that exact path in config.
+- Fix: run command directly first, then use that exact path in config (`.venv/bin/brainreg --help` on macOS/Linux, `.venv\\Scripts\\brainreg.exe --help` on Windows).
 
 ## Notes for GUI Users
 

@@ -2,6 +2,8 @@
 
 Radii Cleaning fixes abnormal radius values while preserving branch continuity.
 
+OS note: replace `./data/...` with `.\data\...` on Windows. If `swctools` is not on PATH, use module mode (`python -m swctools.cli.cli ...` on macOS/Linux, `py -m swctools.cli.cli ...` on Windows).
+
 Shared backend module:
 
 - `swctools.tools.batch_processing.features.radii_cleaning`
@@ -57,15 +59,13 @@ Under `rules`:
 Clean one file with percentile mode:
 
 ```bash
-swctools batch radii-clean ./data/single-soma.swc \
-  --threshold-mode percentile --percentile-min 1 --percentile-max 99.5
+swctools batch radii-clean ./data/single-soma.swc --threshold-mode percentile --percentile-min 1 --percentile-max 99.5
 ```
 
 Clean one file with absolute mode:
 
 ```bash
-swctools batch radii-clean ./data/single-soma.swc \
-  --threshold-mode absolute --abs-min 0.05 --abs-max 30
+swctools batch radii-clean ./data/single-soma.swc --threshold-mode absolute --abs-min 0.05 --abs-max 30
 ```
 
 Allow soma radii to be modified:

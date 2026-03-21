@@ -30,36 +30,84 @@ Core workflows currently include:
 
 ## Install
 
+macOS/Linux (GUI + CLI):
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install -e ".[gui]"
 ```
 
-CLI-only install:
+Windows PowerShell (GUI + CLI):
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[gui]"
+```
+
+Windows cmd (GUI + CLI):
+
+```bat
+py -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -e ".[gui]"
+```
+
+CLI-only install (all OS, with venv active):
 
 ```bash
-pip install -e .
+python -m pip install -e .
 ```
 
 ## Run
 
-CLI:
+CLI (all OS):
 
 ```bash
 swctools --help
 ```
 
-GUI:
+If `swctools` is not on PATH, use module mode:
+
+macOS/Linux:
+
+```bash
+python -m swctools.cli.cli --help
+```
+
+Windows (PowerShell/cmd):
+
+```powershell
+py -m swctools.cli.cli --help
+```
+
+GUI (all OS):
 
 ```bash
 swctools-gui
-# or
+```
+
+Fallback module mode:
+
+macOS/Linux:
+
+```bash
 python -m swctools.gui.main
 ```
 
+Windows (PowerShell/cmd):
+
+```powershell
+py -m swctools.gui.main
+```
+
 ## Quick CLI Examples
+
+macOS/Linux:
 
 ```bash
 swctools batch split ./data
@@ -72,6 +120,24 @@ swctools validation run ./data/single-soma.swc
 swctools validation auto-fix ./data/single-soma.swc --write
 
 swctools morphology smart-decimation ./data/single-soma.swc --write
+
+swctools plugins load my_lab_plugins.brainglobe_adapter
+swctools plugins list-loaded
+```
+
+Windows (PowerShell/cmd):
+
+```powershell
+swctools batch split .\data
+swctools batch validate .\data
+swctools batch auto-typing .\data --soma --axon --basal
+swctools batch radii-clean .\data
+
+swctools validation rule-guide
+swctools validation run .\data\single-soma.swc
+swctools validation auto-fix .\data\single-soma.swc --write
+
+swctools morphology smart-decimation .\data\single-soma.swc --write
 
 swctools plugins load my_lab_plugins.brainglobe_adapter
 swctools plugins list-loaded
@@ -140,8 +206,22 @@ rewriting their internal algorithms.
 
 For automatic plugin loading in CLI sessions:
 
+macOS/Linux:
+
 ```bash
 export SWCTOOLS_PLUGINS="my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_methods"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:SWCTOOLS_PLUGINS = "my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_methods"
+```
+
+Windows cmd:
+
+```bat
+set SWCTOOLS_PLUGINS=my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_methods
 ```
 
 Starter template:

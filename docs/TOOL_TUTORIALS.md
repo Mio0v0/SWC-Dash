@@ -2,6 +2,8 @@
 
 This page walks through each top-level tool with practical workflows.
 
+OS note: replace `./data/...` with `.\data\...` on Windows. If `swctools` is not on PATH, use module mode (`python -m swctools.cli.cli ...` on macOS/Linux, `py -m swctools.cli.cli ...` on Windows).
+
 ## Tool -> Feature map
 
 ## 1) Batch Processing
@@ -184,8 +186,7 @@ swctools analysis summary ./data/single-soma.swc
 Most commands support inline temporary overrides:
 
 ```bash
-swctools validation run ./data/single-soma.swc \
-  --config-json '{"checks":{"has_soma":{"enabled":true,"severity":"warning","params":{}}}}'
+swctools validation run ./data/single-soma.swc --config-json '{"checks":{"has_soma":{"enabled":true,"severity":"warning","params":{}}}}'
 ```
 
 Persistent defaults live in:

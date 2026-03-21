@@ -56,8 +56,22 @@ When replacing a method, return the same output shape expected by caller.
 - `swctools plugins load <module>` is process-local.
 - `SWCTOOLS_PLUGINS` enables autoload each new process.
 
+macOS/Linux:
+
 ```bash
 export SWCTOOLS_PLUGINS="my_lab_plugins.plugin_a,my_lab_plugins.plugin_b"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:SWCTOOLS_PLUGINS = "my_lab_plugins.plugin_a,my_lab_plugins.plugin_b"
+```
+
+Windows cmd:
+
+```bat
+set SWCTOOLS_PLUGINS=my_lab_plugins.plugin_a,my_lab_plugins.plugin_b
 ```
 
 ## 5. Safety recommendations

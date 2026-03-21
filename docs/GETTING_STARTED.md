@@ -11,19 +11,37 @@ cd <repo-folder-name>
 
 ## 2. Create environment and install
 
-GUI + CLI install:
+macOS/Linux (GUI + CLI):
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install -e ".[gui]"
 ```
 
-CLI-only install:
+Windows PowerShell (GUI + CLI):
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[gui]"
+```
+
+Windows cmd (GUI + CLI):
+
+```bat
+py -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -e ".[gui]"
+```
+
+CLI-only install (all OS, with venv active):
 
 ```bash
-pip install -e .
+python -m pip install -e .
 ```
 
 ## 3. Verify installation
@@ -33,7 +51,23 @@ swctools --help
 swctools-gui --help
 ```
 
-If `swctools` command is not found, activate the correct venv first:
+If `swctools` command is not found, use module mode:
+
+macOS/Linux:
+
+```bash
+python -m swctools.cli.cli --help
+```
+
+Windows PowerShell/cmd:
+
+```powershell
+py -m swctools.cli.cli --help
+```
+
+If you need to verify active environment:
+
+macOS/Linux:
 
 ```bash
 echo "$VIRTUAL_ENV"
@@ -41,9 +75,25 @@ which python
 which swctools
 ```
 
+Windows PowerShell:
+
+```powershell
+echo $env:VIRTUAL_ENV
+Get-Command python
+Get-Command swctools
+```
+
+Windows cmd:
+
+```bat
+echo %VIRTUAL_ENV%
+where python
+where swctools
+```
+
 ## 4. Run the application
 
-CLI examples:
+CLI examples (macOS/Linux path style):
 
 ```bash
 swctools batch split ./data
@@ -51,12 +101,26 @@ swctools validation run ./data/single-soma.swc
 swctools morphology smart-decimation ./data/single-soma.swc --write
 ```
 
+CLI examples (Windows path style):
+
+```powershell
+swctools batch split .\data
+swctools validation run .\data\single-soma.swc
+swctools morphology smart-decimation .\data\single-soma.swc --write
+```
+
 GUI:
 
 ```bash
 swctools-gui
-# or
+# or module mode:
 python -m swctools.gui.main
+```
+
+Windows module-mode fallback:
+
+```powershell
+py -m swctools.gui.main
 ```
 
 ## 5. Core workflow (recommended)
@@ -99,6 +163,7 @@ Open built docs:
 - macOS: `open docs/_build/html/index.html`
 - Linux: `xdg-open docs/_build/html/index.html`
 - Windows (PowerShell): `start docs/_build/html/index.html`
+- Windows (cmd): `start docs\_build\html\index.html`
 
 ## 8. Troubleshooting quick list
 

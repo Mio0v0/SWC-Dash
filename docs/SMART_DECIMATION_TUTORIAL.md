@@ -2,6 +2,8 @@
 
 Smart Decimation simplifies SWC geometry while preserving important morphology structure.
 
+OS note: replace `./data/...` with `.\data\...` on Windows. If `swctools` is not on PATH, use module mode (`python -m swctools.cli.cli ...` on macOS/Linux, `py -m swctools.cli.cli ...` on Windows).
+
 Implementation:
 
 - `swctools.tools.morphology_editing.features.simplification`
@@ -64,8 +66,7 @@ swctools morphology smart-decimation ./data/single-soma.swc --write --out ./data
 Temporary overrides:
 
 ```bash
-swctools morphology smart-decimation ./data/single-soma.swc --write \
-  --config-json '{"thresholds":{"epsilon":1.2,"radius_tolerance":0.35},"flags":{"keep_tips":true,"keep_bifurcations":true}}'
+swctools morphology smart-decimation ./data/single-soma.swc --write --config-json '{"thresholds":{"epsilon":1.2,"radius_tolerance":0.35},"flags":{"keep_tips":true,"keep_bifurcations":true}}'
 ```
 
 ## Outputs and logs

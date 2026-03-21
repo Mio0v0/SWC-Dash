@@ -25,12 +25,32 @@ Top-level tools:
 - `analysis`
 - `plugins`
 
+## OS Notes
+
+- Command names and flags are the same on macOS/Linux/Windows.
+- Path style differs: macOS/Linux `./data/file.swc`, Windows `.\data\file.swc`.
+- If script entrypoints are not on PATH, use module mode:
+  - macOS/Linux: `python -m swctools.cli.cli ...`
+  - Windows: `py -m swctools.cli.cli ...`
+- Shell line continuation differs:
+  - macOS/Linux: `\`
+  - PowerShell: `` ` ``
+  - Windows cmd: `^`
+
 ## Common Option: `--config-json`
 
-Most feature commands accept:
+Most feature commands accept JSON, but quote style differs by shell:
+
+macOS/Linux or PowerShell:
 
 ```bash
 --config-json '{"some":"override"}'
+```
+
+Windows cmd:
+
+```bat
+--config-json "{\"some\":\"override\"}"
 ```
 
 This must be a JSON object and is merged into feature config for that run.
@@ -284,10 +304,24 @@ swctools plugins list-loaded
 
 ### Environment Autoload
 
-Plugins can autoload on every CLI run via:
+Plugins can autoload on every CLI run via `SWCTOOLS_PLUGINS`:
+
+macOS/Linux:
 
 ```bash
 export SWCTOOLS_PLUGINS="my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_auto_typing"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:SWCTOOLS_PLUGINS = "my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_auto_typing"
+```
+
+Windows cmd:
+
+```bat
+set SWCTOOLS_PLUGINS=my_lab_plugins.brainglobe_adapter,my_lab_plugins.custom_auto_typing
 ```
 
 ## Output and Reports
